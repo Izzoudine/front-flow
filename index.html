@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Flow - Vercel Ready</title>
+    <title>Flow - Universal Hybrid</title>
     <style>
         /* --- 1. VARIABLES & THEME FLOW --- */
         :root {
@@ -314,24 +314,20 @@
 
     <script>
         // ==========================================
-        // 🛠️ CONFIGURATION DEPLOIEMENT (IMPORTANT)
+        // 1. CONFIGURATION RÉSEAU
         // ==========================================
-        
         const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-
+        
         let BASE_URL;
         let WS_URL;
 
         if (isLocal) {
-            // MODE DEV
-            BASE_URL = "http://127.0.0.1:8000";
-            WS_URL = "ws://127.0.0.1:8000/ws/listen";
+            BASE_URL = "http://127.0.0.1:8001"; // Port 8001
+            WS_URL = "ws://127.0.0.1:8001/ws/listen";
             console.log("🔧 Mode Local");
         } else {
-            // MODE PROD (Vercel)
-            // 👇 REMPLACE CETTE LIGNE PAR TON LIEN NGROK (celui qui commence par https://)
+            // TON LIEN NGROK EXACT
             const PROD_API = "https://oscillometric-unexterminated-dionne.ngrok-free.dev"; 
-            
             BASE_URL = PROD_API;
             WS_URL = PROD_API.replace("https://", "wss://") + "/ws/listen";
             console.log("🚀 Mode Prod : " + PROD_API);
@@ -340,9 +336,28 @@
         document.getElementById('networkInfo').textContent = isLocal ? "Mode Local" : "Mode Production";
 
         // ==========================================
-        // ETAT & INIT
+        // 2. FONCTION API UNIVERSELLE (WRAPPER)
         // ==========================================
-        
+        // Cette fonction gère l'en-tête Ngrok obligatoire
+        async function apiCall(endpoint, body) {
+            const headers = {
+                'ngrok-skip-browser-warning': 'true' // <--- LE FIX
+            };
+            
+            if(!(body instanceof FormData)) {
+                headers['Content-Type'] = 'application/json';
+            }
+            
+            return fetch(`${BASE_URL}${endpoint}`, {
+                method: 'POST',
+                headers: headers,
+                body: body instanceof FormData ? body : JSON.stringify(body)
+            });
+        }
+
+        // ==========================================
+        // 3. LOGIQUE APPLICATION
+        // ==========================================
         let currentMode = 'config';
         let selectedChar = 'Lucas'; 
         let selectedGender = 'homme'; 
@@ -358,15 +373,12 @@
 
         async function startSession() {
             try {
-                await fetch(`${BASE_URL}/config`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        character: selectedChar,
-                        gender: selectedGender,
-                        scenario: document.getElementById('scenarioInput').value,
-                        behavior: document.getElementById('behaviorInput').value
-                    })
+                // Utilisation de apiCall au lieu de fetch
+                await apiCall('/config', {
+                    character: selectedChar,
+                    gender: selectedGender,
+                    scenario: document.getElementById('scenarioInput').value,
+                    behavior: document.getElementById('behaviorInput').value
                 });
                 
                 document.getElementById('screen-config').classList.remove('active');
@@ -375,7 +387,7 @@
                 switchTab('chat');
 
             } catch (e) {
-                alert(`ERREUR : Impossible de contacter ${BASE_URL}. Vérifie le serveur.`);
+                alert(`ERREUR : Impossible de contacter le serveur (${BASE_URL}). Vérifie que ./startup.sh tourne.`);
             }
         }
 
@@ -412,7 +424,7 @@
         }
 
         // ==========================================
-        // 1. RECONNAISSANCE VOCALE
+        // 4. RECONNAISSANCE VOCALE
         // ==========================================
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition;
@@ -460,7 +472,10 @@
         async function startWebSocket() {
             if(socket && socket.readyState === WebSocket.OPEN) return;
             socket = new WebSocket(WS_URL);
-            socket.onopen = async () => startChatRecording();
+            socket.onopen = async () => {
+                console.log("Socket connecté");
+                startChatRecording();
+            };
             socket.onmessage = (event) => {
                 const text = event.data;
                 document.getElementById('chatFinal').textContent = text;
@@ -489,12 +504,11 @@
 
 
         // ==========================================
-        // 2. CERVEAU + LECTEUR AUDIO (CORRIGÉ)
+        // 5. CERVEAU + AUDIO (MODIFIÉ)
         // ==========================================
         async function sendToBrain(text) {
             if (aiIsSpeaking) return;
 
-            // UI
             const avatar = document.getElementById('avatarDisplay');
             const status = document.getElementById('chatStatus');
             avatar.className = "avatar thinking";
@@ -503,17 +517,13 @@
             if(isChrome && recognition) recognition.abort();
 
             try {
-                // Envoi Texte -> Reçoit Audio (Blob)
-                const response = await fetch(`${BASE_URL}/chat`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({text: text})
-                });
+                // Appel API via notre wrapper
+                const res = await apiCall('/chat', {text: text});
+                if(!res.ok) throw new Error("Erreur serveur");
 
-                if (!response.ok) throw new Error("Erreur serveur");
-
-                // --- LECTURE AUDIO ---
-                const audioBlob = await response.blob();
-                const audioUrl = URL.createObjectURL(audioBlob);
+                // Lecture Audio (Blob)
+                const blob = await res.blob();
+                const audioUrl = URL.createObjectURL(blob);
                 const audio = new Audio(audioUrl);
 
                 audio.onplay = () => {
@@ -547,7 +557,7 @@
         }
 
         // ==========================================
-        // 3. PITCH LOGIC
+        // 6. PITCH LOGIC (MODIFIÉ)
         // ==========================================
         let globalStream = null, mediaRecorder, audioChunks=[], pitchTimer, startTime, isRecording=false;
 
@@ -565,7 +575,11 @@
                 mediaRecorder = new MediaRecorder(stream);
                 audioChunks = [];
                 mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
-                mediaRecorder.onstop = async () => analyzeAudio(new Blob(audioChunks, { type: 'audio/webm' }));
+                
+                mediaRecorder.onstop = async () => {
+                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                    analyzeAudio(blob);
+                };
 
                 mediaRecorder.start();
                 isRecording = true;
@@ -580,7 +594,9 @@
                 startTime = Date.now();
                 pitchTimer = setInterval(() => {
                     const d = Math.floor((Date.now() - startTime)/1000);
-                    document.getElementById('timer').textContent = `${String(Math.floor(d/60)).padStart(2,'0')}:${String(d%60).padStart(2,'0')}`;
+                    const m = String(Math.floor(d/60)).padStart(2,'0');
+                    const s = String(d%60).padStart(2,'0');
+                    document.getElementById('timer').textContent = `${m}:${s}`;
                 }, 1000);
 
             } else { stopPitch(); }
@@ -598,7 +614,8 @@
             const formData = new FormData();
             formData.append("file", blob, "pitch.webm");
             try {
-                const res = await fetch(`${BASE_URL}/analyze_audio`, {method: 'POST', body: formData});
+                // Appel API via notre wrapper
+                const res = await apiCall('/analyze_audio', formData);
                 const data = await res.json();
                 
                 if (data.status === 'error') { alert("Erreur: " + data.message); return; }
@@ -610,7 +627,7 @@
                 document.getElementById('pitchTranscript').textContent = data.metrics.transcript;
                 
                 let report; try{ report = JSON.parse(data.advice.replace(/```json/g,'').replace(/```/g,'').trim()); }
-                catch(e) { report = {note:"?"}; }
+                catch(e) { report = {note:"?", conseil: "Erreur parsing JSON"}; }
 
                 document.getElementById('rScore').textContent = report.note || "?";
                 document.getElementById('rHook').textContent = report.accroche_probleme || "-";
@@ -638,12 +655,15 @@
             if (pollingInterval) clearInterval(pollingInterval);
             pollingInterval = setInterval(async () => {
                 if (currentMode !== 'chat') return;
-                // En mode API audio, le serveur est stateless, donc ce polling sert moins
-                // mais on le garde pour l'architecture.
-            }, 100); 
+                try {
+                    // Appel API via notre wrapper
+                    const res = await apiCall('/status');
+                    // On ne fait rien du résultat pour l'instant car c'est stateless
+                } catch(e){}
+            }, 500); 
         }
         function stopChatPolling() { clearInterval(pollingInterval); }
-        async function forceStop() { await fetch(`${BASE_URL}/stop`, {method: 'POST'}); }
+        async function forceStop() { await apiCall('/stop'); }
 
     </script>
 </body>
