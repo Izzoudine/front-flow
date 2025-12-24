@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flow - Vercel Ready</title>
+    <style>
+        /* --- 1. VARIABLES & THEME FLOW --- */
+        :root {
+            --bg-dark: #0f172a; 
+            --bg-card: #1e293b;
+            --primary: #0ea5e9; 
+            --primary-dark: #0284c7;
+            --success: #10b981; 
+            --danger: #ef4444; 
+            --warning: #f59e0b; 
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        * { box-sizing: border-box; }
+
+        body { 
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
+            background-color: var(--bg-dark); 
+            color: var(--text-main); 
+            margin: 0; 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
+
+        /* --- 2. STRUCTURE --- */
+        .full-screen { 
+            width: 100%; height: 100%; display: none; 
+            flex-direction: column; align-items: center; 
+            overflow-y: auto; padding: 20px; 
+        }
+        .full-screen.active { display: flex; }
+        #screen-config.active { justify-content: center; }
+
+        /* --- 3. CONFIGURATION --- */
+        .brand-title { 
+            font-size: 2.5rem; font-weight: 800; 
+            background: linear-gradient(to right, #0ea5e9, #3b82f6); 
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
+            margin-bottom: 10px; 
+        }
+        .config-card { 
+            background: var(--bg-card); padding: 30px; border-radius: 24px; 
+            width: 100%; max-width: 450px; border: 1px solid #334155; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4); 
+        }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 10px; color: var(--text-dim); font-weight: 600; }
+        
+        input, select, textarea { 
+            width: 100%; padding: 14px; background: #0f172a; 
+            border: 1px solid #334155; border-radius: 12px; 
+            color: white; font-size: 1rem; outline: none; transition: 0.2s; 
+        }
+        input:focus, select:focus, textarea:focus { border-color: var(--primary); }
+        textarea { resize: none; height: 80px; }
+        
+        .char-selector { display: flex; gap: 15px; }
+        .char-opt { 
+            flex: 1; background: #0f172a; border: 2px solid transparent; 
+            padding: 15px; border-radius: 12px; text-align: center; 
+            cursor: pointer; transition: 0.2s; 
+        }
+        .char-opt.selected { border-color: var(--primary); background: rgba(14, 165, 233, 0.1); }
+        .char-emoji { font-size: 2.5rem; display: block; margin-bottom: 5px; }
+
+        /* --- 4. NAVIGATION --- */
+        nav { 
+            width: 100%; background: var(--bg-card); padding: 15px; 
+            display: flex; justify-content: center; gap: 15px; 
+            border-bottom: 1px solid #334155; flex-shrink: 0; z-index: 10; 
+        }
+        .nav-btn { 
+            background: transparent; border: none; color: var(--text-dim); 
+            font-size: 1rem; cursor: pointer; padding: 10px 20px; 
+            border-radius: 12px; display: flex; align-items: center; gap: 8px; 
+            font-weight: 500; transition: 0.2s; 
+        }
+        .nav-btn.active { background: var(--primary); color: white; font-weight: bold; }
+        .btn-quit { margin-left: auto; color: var(--danger); }
+
+        .tab-content { 
+            display: none; flex-direction: column; align-items: center; 
+            width: 100%; max-width: 800px; margin: 0 auto; 
+            flex: 1; overflow-y: auto; padding-bottom: 50px; 
+        }
+        .tab-content.active { display: flex; }
+
+        /* --- 5. CHAT --- */
+        .avatar { 
+            width: 150px; height: 150px; border-radius: 50%; 
+            background: #1e293b; border: 4px solid #475569; 
+            display: flex; justify-content: center; align-items: center; 
+            font-size: 65px; margin-top: 30px; transition: 0.3s; 
+        }
+        .listening .avatar { border-color: var(--success); transform: scale(1.05); }
+        .speaking .avatar { border-color: var(--primary); box-shadow: 0 0 40px rgba(14, 165, 233, 0.5); }
+        .chat-transcript { 
+            text-align: center; font-size: 1.2rem; min-height: 80px; 
+            width: 100%; color: #e2e8f0; margin-top: 25px; padding: 0 20px; 
+        }
+
+        /* --- 6. PITCH & STATS --- */
+        .timer-display { 
+            font-size: 5rem; font-weight: 800; color: var(--primary); 
+            margin-top: 20px; font-variant-numeric: tabular-nums; 
+            text-shadow: 0 0 30px rgba(14, 165, 233, 0.2); 
+        }
+
+        .stats-grid { 
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; 
+            width: 100%; margin-top: 30px; display: none; 
+        }
+        .stat-card { 
+            background: #1e293b; padding: 15px; border-radius: 16px; 
+            text-align: center; border: 1px solid #334155; 
+        }
+        .stat-val { font-size: 1.8rem; font-weight: 800; color: white; }
+        .stat-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-top: 5px; }
+        .stat-good { color: var(--success); } 
+        .stat-bad { color: var(--danger); }
+
+        /* RAPPORT QQOQCP */
+        .report-panel { 
+            background: var(--bg-card); padding: 30px; border-radius: 24px; 
+            border-left: 6px solid var(--success); display: none; 
+            margin-top: 30px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.5); 
+        }
+        .report-header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid #334155; 
+        }
+        .report-title { font-weight: 800; color: #fff; font-size: 1.4rem; }
+        .score-badge { font-size: 3rem; color: var(--success); font-weight: 900; }
+
+        .report-item { margin-bottom: 18px; border-bottom: 1px solid #334155; padding-bottom: 12px; }
+        .report-item:last-child { border: none; }
+        
+        .report-key { 
+            color: var(--primary); font-size: 0.85rem; font-weight: 700; 
+            text-transform: uppercase; display: block; margin-bottom: 5px; 
+        }
+        .report-val { color: #f1f5f9; font-size: 1.05rem; line-height: 1.4; }
+
+        /* ALERTE ÉLÉMENTS MANQUANTS */
+        .missing-box { 
+            background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); 
+            padding: 15px; border-radius: 12px; margin-bottom: 20px; display: none;
+        }
+        .missing-title { 
+            color: var(--danger); font-weight: bold; text-transform: uppercase; 
+            font-size: 0.8rem; margin-bottom: 5px; display: block; 
+        }
+        .missing-content { color: #fca5a5; font-size: 0.95rem; }
+
+        .pitch-transcript-box { 
+            background: #0f172a; border: 1px solid #334155; border-radius: 16px; 
+            padding: 25px; width: 100%; color: #cbd5e1; margin-top: 30px; 
+            white-space: pre-wrap; display: none; 
+        }
+
+        /* --- 7. BOUTONS --- */
+        .btn-action { 
+            padding: 18px 40px; border-radius: 50px; border: none; 
+            font-size: 1.1rem; font-weight: bold; cursor: pointer; color: white; 
+            background: var(--primary); margin-top: 30px; width: 100%; max-width: 320px; 
+            display: flex; justify-content: center; align-items: center; gap: 12px; 
+            transition: transform 0.2s; 
+        }
+        .btn-action:hover { transform: translateY(-2px); }
+        .btn-red { background: var(--danger); }
+        
+        .recording-dot { width: 14px; height: 14px; background: white; border-radius: 50%; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.2; } }
+
+        @media (max-width: 600px) { 
+            .nav-btn span { display: none; } 
+            .timer-display { font-size: 3.5rem; } 
+            .stats-grid { grid-template-columns: 1fr 1fr; } 
+            .stat-card:last-child { grid-column: span 2; } 
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="screen-config" class="full-screen active">
+        <div class="brand-title">🌊 Flow</div>
+        <p style="color:#64748b; margin-top:-5px; margin-bottom:30px;" id="networkInfo">Chargement...</p>
+        
+        <div class="config-card">
+            <div class="form-group">
+                <label>Ton Coach</label>
+                <div class="char-selector">
+                    <div class="char-opt selected" onclick="selectChar('Lucas', 'homme', '🧑‍🎓', this)">
+                        <span class="char-emoji">🧑‍🎓</span> Lucas
+                    </div>
+                    <div class="char-opt" onclick="selectChar('Julie', 'femme', '👩‍💼', this)">
+                        <span class="char-emoji">👩‍💼</span> Julie
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Sujet du Pitch</label>
+                <textarea id="scenarioInput" placeholder="Ex: Pitch startup, Vente produit...">Entretien d'embauche.</textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Personnalité de l'IA</label>
+                <select id="behaviorInput">
+                    <option>Amical et détendu (Sympa)</option>
+                    <option>Strict et professionnel (Challenge)</option>
+                    <option>Timide et hésitant (Drôle)</option>
+                    <option>Sarcastique et piquant (Fun)</option>
+                    <option>Coach militaire (Intensif)</option>
+                    <option>Philosophe calme (Zen)</option>
+                </select>
+            </div>
+
+            <button class="btn-action" style="width:100%" onclick="startSession()">
+                🚀 Lancer la session
+            </button>
+        </div>
+    </div>
+
+    <div id="screen-app" class="full-screen">
+        <nav>
+            <button class="nav-btn active" onclick="switchTab('chat')">💬 <span>Discussion</span></button>
+            <button class="nav-btn" onclick="switchTab('pitch')">🌊 <span>Pitch Analyzer</span></button>
+            <button class="nav-btn btn-quit" onclick="location.reload()">❌ <span>Quitter</span></button>
+        </nav>
+
+        <div id="tab-chat" class="tab-content active">
+            <div class="avatar" id="avatarDisplay">🧑‍🎓</div>
+            <div style="margin-top:15px; color:#64748b; font-size:0.9rem; font-weight:600;" id="chatStatus">Chargement...</div>
+            
+            <div class="chat-transcript">
+                <span id="chatFinal" style="color:white; font-weight:600;"></span>
+                <span id="chatInterim" style="color:#64748b; font-style:italic;"></span>
+            </div>
+
+            <button class="btn-action btn-red" onclick="forceStop()">
+                🤫 STOP (Silence)
+            </button>
+        </div>
+
+        <div id="tab-pitch" class="tab-content">
+            <div class="timer-display" id="timer">00:00</div>
+
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="stat-val" id="statWPM">--</div>
+                    <div class="stat-label">Mots / Min</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val" id="statFillers">--</div>
+                    <div class="stat-label">"Euh"</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val" id="statPauses">--</div>
+                    <div class="stat-label">Pauses > 2s</div>
+                </div>
+            </div>
+
+            <div class="pitch-transcript-box" id="pitchTranscript"></div>
+
+            <div id="reportCard" class="report-panel">
+                <div class="report-header">
+                    <span class="report-title">SCORE STRUCTURE</span>
+                    <span class="score-badge" id="rScore">--</span>
+                </div>
+                
+                <div class="missing-box" id="missingBox">
+                    <span class="missing-title">⚠️ Éléments Manquants (QQOQCP)</span>
+                    <span class="missing-content" id="rMissing">...</span>
+                </div>
+
+                <div class="report-item">
+                    <span class="report-key">1. Problème & Accroche (Why)</span>
+                    <span class="report-val" id="rHook">...</span>
+                </div>
+                <div class="report-item">
+                    <span class="report-key">2. Solution & Cible (What/Who)</span>
+                    <span class="report-val" id="rSol">...</span>
+                </div>
+                <div class="report-item">
+                    <span class="report-key">3. Unicité & Business (Why You)</span>
+                    <span class="report-val" id="rBiz">...</span>
+                </div>
+                <div class="report-item">
+                    <span class="report-key">4. Appel à l'action (CTA)</span>
+                    <span class="report-val" id="rCta">...</span>
+                </div>
+                <div class="report-item">
+                    <span class="report-key">🚀 Conseil Prioritaire</span>
+                    <span class="report-val" id="rTip" style="color:#fcd34d; font-weight:bold;">...</span>
+                </div>
+            </div>
+
+            <button id="btnPitchAction" class="btn-action" onclick="togglePitch()">
+                🎙️ Enregistrer
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 🛠️ CONFIGURATION DEPLOIEMENT (IMPORTANT)
+        // ==========================================
+        
+        const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+        let BASE_URL;
+        let WS_URL;
+
+        if (isLocal) {
+            // MODE DEV
+            BASE_URL = "http://127.0.0.1:8000";
+            WS_URL = "ws://127.0.0.1:8000/ws/listen";
+            console.log("🔧 Mode Local");
+        } else {
+            // MODE PROD (Vercel)
+            // 👇 REMPLACE CETTE LIGNE PAR TON LIEN NGROK (celui qui commence par https://)
+            const PROD_API = "https://MON-LIEN-NGROK-ICI.ngrok-free.app"; 
+            
+            BASE_URL = PROD_API;
+            WS_URL = PROD_API.replace("https://", "wss://") + "/ws/listen";
+            console.log("🚀 Mode Prod : " + PROD_API);
+        }
+
+        document.getElementById('networkInfo').textContent = isLocal ? "Mode Local" : "Mode Production";
+
+        // ==========================================
+        // ETAT & INIT
+        // ==========================================
+        
+        let currentMode = 'config';
+        let selectedChar = 'Lucas'; 
+        let selectedGender = 'homme'; 
+        let selectedEmoji = '🧑‍🎓';
+        
+        const isChrome = ('webkitSpeechRecognition' in window);
+
+        function selectChar(name, gender, emoji, el) {
+            selectedChar = name; selectedGender = gender; selectedEmoji = emoji;
+            document.querySelectorAll('.char-opt').forEach(e => e.classList.remove('selected'));
+            el.classList.add('selected');
+        }
+
+        async function startSession() {
+            try {
+                await fetch(`${BASE_URL}/config`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        character: selectedChar,
+                        gender: selectedGender,
+                        scenario: document.getElementById('scenarioInput').value,
+                        behavior: document.getElementById('behaviorInput').value
+                    })
+                });
+                
+                document.getElementById('screen-config').classList.remove('active');
+                document.getElementById('screen-app').classList.add('active');
+                document.getElementById('avatarDisplay').textContent = selectedEmoji;
+                switchTab('chat');
+
+            } catch (e) {
+                alert(`ERREUR : Impossible de contacter ${BASE_URL}. Vérifie le serveur.`);
+            }
+        }
+
+        function switchTab(tabName) {
+            currentMode = tabName;
+            
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            const btns = document.querySelectorAll('.nav-btn');
+            if(tabName === 'chat') btns[0].classList.add('active');
+            if(tabName === 'pitch') btns[1].classList.add('active');
+            
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+
+            if (tabName === 'chat') {
+                stopPitch(); 
+                
+                if (isChrome) {
+                    document.getElementById('chatStatus').textContent = "⚡️ Mode Rapide (Chrome)";
+                    startNativeRecognition();
+                    startChatPolling();
+                } else {
+                    document.getElementById('chatStatus').textContent = "🌐 Mode Compatibilité (Socket)";
+                    startWebSocket();
+                    startChatPolling();
+                }
+            } else {
+                stopPitch(); 
+                stopNativeRecognition();
+                closeWebSocket(); 
+                stopChatPolling();
+                if(recognition && isChrome) recognition.abort();
+            }
+        }
+
+        // ==========================================
+        // 1. RECONNAISSANCE VOCALE
+        // ==========================================
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+        
+        if(isChrome) {
+            recognition = new SpeechRecognition();
+            recognition.lang = "fr-FR";
+            recognition.continuous = true;
+            recognition.interimResults = true;
+
+            recognition.onresult = (event) => {
+                if (currentMode !== 'chat' || aiIsSpeaking || coolDownActive) return;
+
+                let interim = ""; let final = "";
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    if (event.results[i].isFinal) final += event.results[i][0].transcript + " ";
+                    else interim += event.results[i][0].transcript;
+                }
+                
+                document.getElementById('chatFinal').textContent = final;
+                document.getElementById('chatInterim').textContent = interim;
+                
+                if (final.trim() && !aiIsSpeaking) sendToBrain(final);
+            };
+            
+            recognition.onend = () => {
+                if (currentMode === 'chat' && !aiIsSpeaking && !coolDownActive) {
+                    try { recognition.start(); } catch(e){}
+                }
+            };
+        }
+
+        function startNativeRecognition() {
+            if(isChrome && recognition) { try { recognition.start(); } catch(e){} }
+        }
+
+        function stopNativeRecognition() {
+            if(isChrome && recognition) recognition.stop();
+        }
+
+        // --- SOCKET (FALLBACK) ---
+        let socket;
+        let chatRecorder;
+        
+        async function startWebSocket() {
+            if(socket && socket.readyState === WebSocket.OPEN) return;
+            socket = new WebSocket(WS_URL);
+            socket.onopen = async () => startChatRecording();
+            socket.onmessage = (event) => {
+                const text = event.data;
+                document.getElementById('chatFinal').textContent = text;
+                if(text.trim().length > 1) sendToBrain(text);
+            };
+            socket.onclose = () => { document.getElementById('chatStatus').textContent = "🔴 Déconnecté"; };
+        }
+
+        async function startChatRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                chatRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                chatRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0 && socket.readyState === WebSocket.OPEN && !aiIsSpeaking && !coolDownActive) {
+                        socket.send(event.data);
+                    }
+                };
+                chatRecorder.start(250); 
+            } catch (e) { alert("Micro inaccessible"); }
+        }
+
+        function closeWebSocket() {
+            if(chatRecorder && chatRecorder.state !== 'inactive') chatRecorder.stop();
+            if(socket) socket.close();
+        }
+
+
+        // ==========================================
+        // 2. CERVEAU + LECTEUR AUDIO (CORRIGÉ)
+        // ==========================================
+        async function sendToBrain(text) {
+            if (aiIsSpeaking) return;
+
+            // UI
+            const avatar = document.getElementById('avatarDisplay');
+            const status = document.getElementById('chatStatus');
+            avatar.className = "avatar thinking";
+            status.textContent = "🧠 Réflexion...";
+            
+            if(isChrome && recognition) recognition.abort();
+
+            try {
+                // Envoi Texte -> Reçoit Audio (Blob)
+                const response = await fetch(`${BASE_URL}/chat`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: text})
+                });
+
+                if (!response.ok) throw new Error("Erreur serveur");
+
+                // --- LECTURE AUDIO ---
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+
+                audio.onplay = () => {
+                    aiIsSpeaking = true;
+                    avatar.className = "avatar speaking";
+                    status.textContent = "🔊 Flow parle...";
+                    status.style.color = "#0ea5e9";
+                };
+
+                audio.onended = () => {
+                    aiIsSpeaking = false;
+                    avatar.className = "avatar listening";
+                    status.textContent = "🤫 Anti-écho...";
+                    setTimeout(() => {
+                        coolDownActive = false;
+                        if(currentMode === 'chat') {
+                            if(isChrome) try { recognition.start(); } catch(e){}
+                            status.textContent = isChrome ? "⚡️ À vous" : "🌐 À vous";
+                            status.style.color = "#10b981";
+                        }
+                    }, 500);
+                };
+
+                audio.play();
+
+            } catch (e) {
+                console.error(e);
+                avatar.className = "avatar listening";
+                status.textContent = "🔴 Erreur";
+            }
+        }
+
+        // ==========================================
+        // 3. PITCH LOGIC
+        // ==========================================
+        let globalStream = null, mediaRecorder, audioChunks=[], pitchTimer, startTime, isRecording=false;
+
+        async function getMicrophone() {
+            if (globalStream && globalStream.active && globalStream.getAudioTracks().length > 0) return globalStream;
+            try { globalStream = await navigator.mediaDevices.getUserMedia({ audio: true }); return globalStream; } catch(e) { return null; }
+        }
+
+        async function togglePitch() {
+            if (!isRecording) {
+                document.getElementById('btnPitchAction').textContent = "⏳...";
+                const stream = await getMicrophone();
+                if (!stream) { document.getElementById('btnPitchAction').textContent = "🎙️ Enregistrer"; return; }
+
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+                mediaRecorder.onstop = async () => analyzeAudio(new Blob(audioChunks, { type: 'audio/webm' }));
+
+                mediaRecorder.start();
+                isRecording = true;
+                
+                document.getElementById('btnPitchAction').innerHTML = '<div class="recording-dot"></div> Arrêter';
+                document.getElementById('btnPitchAction').classList.add('btn-red');
+                document.getElementById('pitchTranscript').style.display = 'block';
+                document.getElementById('pitchTranscript').textContent = "🔴 Enregistrement...";
+                document.getElementById('reportCard').style.display = 'none';
+                document.getElementById('statsGrid').style.display = 'none';
+
+                startTime = Date.now();
+                pitchTimer = setInterval(() => {
+                    const d = Math.floor((Date.now() - startTime)/1000);
+                    document.getElementById('timer').textContent = `${String(Math.floor(d/60)).padStart(2,'0')}:${String(d%60).padStart(2,'0')}`;
+                }, 1000);
+
+            } else { stopPitch(); }
+        }
+
+        function stopPitch() {
+            if(isRecording && mediaRecorder) mediaRecorder.stop();
+            isRecording = false;
+            clearInterval(pitchTimer);
+            document.getElementById('btnPitchAction').textContent = "⏳ Analyse...";
+            document.getElementById('btnPitchAction').classList.remove('btn-red');
+        }
+
+        async function analyzeAudio(blob) {
+            const formData = new FormData();
+            formData.append("file", blob, "pitch.webm");
+            try {
+                const res = await fetch(`${BASE_URL}/analyze_audio`, {method: 'POST', body: formData});
+                const data = await res.json();
+                
+                if (data.status === 'error') { alert("Erreur: " + data.message); return; }
+
+                document.getElementById('statsGrid').style.display = 'grid';
+                document.getElementById('statWPM').textContent = data.metrics.wpm;
+                document.getElementById('statFillers').textContent = data.metrics.fillers;
+                document.getElementById('statPauses').textContent = data.metrics.pauses;
+                document.getElementById('pitchTranscript').textContent = data.metrics.transcript;
+                
+                let report; try{ report = JSON.parse(data.advice.replace(/```json/g,'').replace(/```/g,'').trim()); }
+                catch(e) { report = {note:"?"}; }
+
+                document.getElementById('rScore').textContent = report.note || "?";
+                document.getElementById('rHook').textContent = report.accroche_probleme || "-";
+                document.getElementById('rSol').textContent = report.solution_cible || "-";
+                document.getElementById('rBiz').textContent = report.unicite_business || "-";
+                document.getElementById('rCta').textContent = report.cta_action || "-";
+                document.getElementById('rTip').textContent = report.conseil || "-";
+
+                const missingBox = document.getElementById('missingBox');
+                if (report.elements_manquants && report.elements_manquants.length > 5 && !report.elements_manquants.includes("Aucun")) {
+                    missingBox.style.display = 'block';
+                    document.getElementById('rMissing').textContent = report.elements_manquants;
+                } else { missingBox.style.display = 'none'; }
+
+                document.getElementById('reportCard').style.display = 'block';
+                document.getElementById('btnPitchAction').textContent = "🎙️ Recommencer";
+
+            } catch(e) { console.error(e); alert("Erreur réseau"); }
+        }
+
+        // --- POLLING ---
+        let aiIsSpeaking = false; let coolDownActive = false; let pollingInterval;
+        
+        function startChatPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(async () => {
+                if (currentMode !== 'chat') return;
+                // En mode API audio, le serveur est stateless, donc ce polling sert moins
+                // mais on le garde pour l'architecture.
+            }, 100); 
+        }
+        function stopChatPolling() { clearInterval(pollingInterval); }
+        async function forceStop() { await fetch(`${BASE_URL}/stop`, {method: 'POST'}); }
+
+    </script>
+</body>
+</html>
