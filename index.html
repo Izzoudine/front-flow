@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Flow - Universal Hybrid</title>
+    <title>Flow - Ultimate Hybrid</title>
     <style>
         /* --- 1. VARIABLES & THEME FLOW --- */
         :root {
@@ -103,6 +103,10 @@
         }
         .listening .avatar { border-color: var(--success); transform: scale(1.05); }
         .speaking .avatar { border-color: var(--primary); box-shadow: 0 0 40px rgba(14, 165, 233, 0.5); }
+        .thinking .avatar { border-color: var(--warning); animation: pulse 1.5s infinite; }
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
         .chat-transcript { 
             text-align: center; font-size: 1.2rem; min-height: 80px; 
             width: 100%; color: #e2e8f0; margin-top: 25px; padding: 0 20px; 
@@ -125,9 +129,7 @@
         }
         .stat-val { font-size: 1.8rem; font-weight: 800; color: white; }
         .stat-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-top: 5px; }
-        .stat-good { color: var(--success); } 
-        .stat-bad { color: var(--danger); }
-
+        
         /* RAPPORT QQOQCP */
         .report-panel { 
             background: var(--bg-card); padding: 30px; border-radius: 24px; 
@@ -314,19 +316,20 @@
 
     <script>
         // ==========================================
-        // 1. CONFIGURATION RÉSEAU
+        // 1. CONFIGURATION DEPLOIEMENT & NGROK
         // ==========================================
-        const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
         
+        const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
         let BASE_URL;
         let WS_URL;
 
         if (isLocal) {
-            BASE_URL = "http://127.0.0.1:8001"; // Port 8001
+            BASE_URL = "http://127.0.0.1:8001";
             WS_URL = "ws://127.0.0.1:8001/ws/listen";
-            console.log("🔧 Mode Local");
+            console.log("🔧 Mode Local (Port 8001)");
         } else {
-            // TON LIEN NGROK EXACT
+            // TON LIEN NGROK
             const PROD_API = "https://oscillometric-unexterminated-dionne.ngrok-free.dev"; 
             BASE_URL = PROD_API;
             WS_URL = PROD_API.replace("https://", "wss://") + "/ws/listen";
@@ -335,18 +338,10 @@
 
         document.getElementById('networkInfo').textContent = isLocal ? "Mode Local" : "Mode Production";
 
-        // ==========================================
-        // 2. FONCTION API UNIVERSELLE (WRAPPER)
-        // ==========================================
-        // Cette fonction gère l'en-tête Ngrok obligatoire
+        // FONCTION API UNIVERSELLE (Le "Fix" Ngrok)
         async function apiCall(endpoint, body) {
-            const headers = {
-                'ngrok-skip-browser-warning': 'true' // <--- LE FIX
-            };
-            
-            if(!(body instanceof FormData)) {
-                headers['Content-Type'] = 'application/json';
-            }
+            const headers = { 'ngrok-skip-browser-warning': 'true' };
+            if(!(body instanceof FormData)) headers['Content-Type'] = 'application/json';
             
             return fetch(`${BASE_URL}${endpoint}`, {
                 method: 'POST',
@@ -356,14 +351,21 @@
         }
 
         // ==========================================
-        // 3. LOGIQUE APPLICATION
+        // 2. ETAT & INIT
         // ==========================================
+        
         let currentMode = 'config';
         let selectedChar = 'Lucas'; 
         let selectedGender = 'homme'; 
         let selectedEmoji = '🧑‍🎓';
         
         const isChrome = ('webkitSpeechRecognition' in window);
+        let recognition;
+
+        // --- VARIABLES INTELLIGENTES (Anti-Coupure & Anti-Echo) ---
+        let silenceTimer;       // Timer pour attendre le silence
+        let accumulatedText = ""; // Accumule le texte tant qu'on n'est pas sûr
+        let isProcessing = false; // "Vrai" si l'IA réfléchit ou parle
 
         function selectChar(name, gender, emoji, el) {
             selectedChar = name; selectedGender = gender; selectedEmoji = emoji;
@@ -373,7 +375,6 @@
 
         async function startSession() {
             try {
-                // Utilisation de apiCall au lieu de fetch
                 await apiCall('/config', {
                     character: selectedChar,
                     gender: selectedGender,
@@ -387,13 +388,12 @@
                 switchTab('chat');
 
             } catch (e) {
-                alert(`ERREUR : Impossible de contacter le serveur (${BASE_URL}). Vérifie que ./startup.sh tourne.`);
+                alert(`ERREUR : Impossible de contacter ${BASE_URL}.`);
             }
         }
 
         function switchTab(tabName) {
             currentMode = tabName;
-            
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             const btns = document.querySelectorAll('.nav-btn');
             if(tabName === 'chat') btns[0].classList.add('active');
@@ -404,146 +404,115 @@
 
             if (tabName === 'chat') {
                 stopPitch(); 
-                
-                if (isChrome) {
-                    document.getElementById('chatStatus').textContent = "⚡️ Mode Rapide (Chrome)";
-                    startNativeRecognition();
-                    startChatPolling();
-                } else {
-                    document.getElementById('chatStatus').textContent = "🌐 Mode Compatibilité (Socket)";
-                    startWebSocket();
-                    startChatPolling();
-                }
+                startChat();
             } else {
                 stopPitch(); 
-                stopNativeRecognition();
-                closeWebSocket(); 
-                stopChatPolling();
-                if(recognition && isChrome) recognition.abort();
+                stopChat();
             }
         }
 
         // ==========================================
-        // 4. RECONNAISSANCE VOCALE
+        // 3. RECONNAISSANCE VOCALE INTELLIGENTE
         // ==========================================
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        let recognition;
         
-        if(isChrome) {
-            recognition = new SpeechRecognition();
+        function startChat() {
+            if (!isChrome) { alert("Utilisez Chrome pour le mode conversation."); return; }
+            if (recognition) { try{ recognition.start(); } catch(e){} return; }
+
+            recognition = new window.webkitSpeechRecognition();
             recognition.lang = "fr-FR";
             recognition.continuous = true;
             recognition.interimResults = true;
 
             recognition.onresult = (event) => {
-                if (currentMode !== 'chat' || aiIsSpeaking || coolDownActive) return;
+                // Si l'IA est déjà en train de réfléchir ou parler, on ignore tout (Anti-Echo Radical)
+                if (isProcessing) return;
 
-                let interim = ""; let final = "";
+                let interim = "";
+                let finalChunk = "";
+
                 for (let i = event.resultIndex; i < event.results.length; i++) {
-                    if (event.results[i].isFinal) final += event.results[i][0].transcript + " ";
+                    if (event.results[i].isFinal) finalChunk += event.results[i][0].transcript;
                     else interim += event.results[i][0].transcript;
                 }
                 
-                document.getElementById('chatFinal').textContent = final;
                 document.getElementById('chatInterim').textContent = interim;
                 
-                if (final.trim() && !aiIsSpeaking) sendToBrain(final);
+                if (finalChunk) {
+                    accumulatedText += finalChunk + " ";
+                    document.getElementById('chatFinal').textContent = accumulatedText;
+
+                    // --- DEBOUNCE (La Patience) ---
+                    // On n'envoie PAS tout de suite. On attend 1.5s de silence complet.
+                    clearTimeout(silenceTimer);
+                    silenceTimer = setTimeout(() => {
+                        if (accumulatedText.trim().length > 0) {
+                            sendToBrain(accumulatedText);
+                            accumulatedText = ""; // On vide le buffer
+                        }
+                    }, 1500); // 1.5 secondes de patience
+                }
             };
             
             recognition.onend = () => {
-                if (currentMode === 'chat' && !aiIsSpeaking && !coolDownActive) {
+                // Relance auto sauf si on a coupé volontairement
+                if (!isProcessing && currentMode === 'chat') {
                     try { recognition.start(); } catch(e){}
                 }
             };
+
+            try { recognition.start(); } catch(e){}
+            document.getElementById('chatStatus').textContent = "Je vous écoute...";
+            document.getElementById('avatarDisplay').className = "avatar listening";
         }
 
-        function startNativeRecognition() {
-            if(isChrome && recognition) { try { recognition.start(); } catch(e){} }
+        function stopChat() {
+            if (recognition) recognition.abort();
+            clearTimeout(silenceTimer);
         }
-
-        function stopNativeRecognition() {
-            if(isChrome && recognition) recognition.stop();
-        }
-
-        // --- SOCKET (FALLBACK) ---
-        let socket;
-        let chatRecorder;
-        
-        async function startWebSocket() {
-            if(socket && socket.readyState === WebSocket.OPEN) return;
-            socket = new WebSocket(WS_URL);
-            socket.onopen = async () => {
-                console.log("Socket connecté");
-                startChatRecording();
-            };
-            socket.onmessage = (event) => {
-                const text = event.data;
-                document.getElementById('chatFinal').textContent = text;
-                if(text.trim().length > 1) sendToBrain(text);
-            };
-            socket.onclose = () => { document.getElementById('chatStatus').textContent = "🔴 Déconnecté"; };
-        }
-
-        async function startChatRecording() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                chatRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-                chatRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0 && socket.readyState === WebSocket.OPEN && !aiIsSpeaking && !coolDownActive) {
-                        socket.send(event.data);
-                    }
-                };
-                chatRecorder.start(250); 
-            } catch (e) { alert("Micro inaccessible"); }
-        }
-
-        function closeWebSocket() {
-            if(chatRecorder && chatRecorder.state !== 'inactive') chatRecorder.stop();
-            if(socket) socket.close();
-        }
-
 
         // ==========================================
-        // 5. CERVEAU + AUDIO (MODIFIÉ)
+        // 4. CERVEAU + GESTION AUDIO (KILL SWITCH)
         // ==========================================
         async function sendToBrain(text) {
-            if (aiIsSpeaking) return;
+            // 1. KILL SWITCH : On coupe le micro IMMÉDIATEMENT
+            isProcessing = true;
+            if (recognition) recognition.abort();
+            clearTimeout(silenceTimer);
 
+            // UI
             const avatar = document.getElementById('avatarDisplay');
             const status = document.getElementById('chatStatus');
             avatar.className = "avatar thinking";
             status.textContent = "🧠 Réflexion...";
-            
-            if(isChrome && recognition) recognition.abort();
+            document.getElementById('chatInterim').textContent = ""; // Nettoyage
 
             try {
-                // Appel API via notre wrapper
+                // Appel API
                 const res = await apiCall('/chat', {text: text});
-                if(!res.ok) throw new Error("Erreur serveur");
+                if (!res.ok) throw new Error("Erreur serveur");
 
-                // Lecture Audio (Blob)
+                // Lecture Audio
                 const blob = await res.blob();
                 const audioUrl = URL.createObjectURL(blob);
                 const audio = new Audio(audioUrl);
 
                 audio.onplay = () => {
-                    aiIsSpeaking = true;
                     avatar.className = "avatar speaking";
                     status.textContent = "🔊 Flow parle...";
                     status.style.color = "#0ea5e9";
                 };
 
                 audio.onended = () => {
-                    aiIsSpeaking = false;
+                    // 2. RÉSURRECTION : On ne rallume le micro que maintenant
                     avatar.className = "avatar listening";
-                    status.textContent = "🤫 Anti-écho...";
+                    status.textContent = "À vous...";
+                    status.style.color = "#64748b";
+                    
+                    // Petit délai de sécurité (500ms) pour éviter l'écho du haut-parleur
                     setTimeout(() => {
-                        coolDownActive = false;
-                        if(currentMode === 'chat') {
-                            if(isChrome) try { recognition.start(); } catch(e){}
-                            status.textContent = isChrome ? "⚡️ À vous" : "🌐 À vous";
-                            status.style.color = "#10b981";
-                        }
+                        isProcessing = false;
+                        if (currentMode === 'chat') startChat();
                     }, 500);
                 };
 
@@ -553,36 +522,48 @@
                 console.error(e);
                 avatar.className = "avatar listening";
                 status.textContent = "🔴 Erreur";
+                isProcessing = false; // En cas d'erreur, on rend la main
+                startChat();
             }
         }
 
+        async function forceStop() {
+            await apiCall('/stop');
+            // Reset état
+            isProcessing = false;
+            stopChat();
+            startChat();
+        }
+
         // ==========================================
-        // 6. PITCH LOGIC (MODIFIÉ)
+        // 5. PITCH LOGIC (INCHANGÉ MAIS CONNECTÉ)
         // ==========================================
-        let globalStream = null, mediaRecorder, audioChunks=[], pitchTimer, startTime, isRecording=false;
+        let mediaRecorder, chunks=[], timerInt, startTime;
+        let isPitchRecording = false;
 
         async function getMicrophone() {
-            if (globalStream && globalStream.active && globalStream.getAudioTracks().length > 0) return globalStream;
-            try { globalStream = await navigator.mediaDevices.getUserMedia({ audio: true }); return globalStream; } catch(e) { return null; }
+            try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch(e) { return null; }
         }
 
         async function togglePitch() {
-            if (!isRecording) {
+            if (!isPitchRecording) {
+                stopChat(); // Important : couper le chat vocal
+                
                 document.getElementById('btnPitchAction').textContent = "⏳...";
                 const stream = await getMicrophone();
                 if (!stream) { document.getElementById('btnPitchAction').textContent = "🎙️ Enregistrer"; return; }
 
                 mediaRecorder = new MediaRecorder(stream);
-                audioChunks = [];
-                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+                chunks = [];
+                mediaRecorder.ondataavailable = event => chunks.push(event.data);
                 
                 mediaRecorder.onstop = async () => {
-                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const blob = new Blob(chunks, { type: 'audio/webm' });
                     analyzeAudio(blob);
                 };
 
                 mediaRecorder.start();
-                isRecording = true;
+                isPitchRecording = true;
                 
                 document.getElementById('btnPitchAction').innerHTML = '<div class="recording-dot"></div> Arrêter';
                 document.getElementById('btnPitchAction').classList.add('btn-red');
@@ -592,29 +573,26 @@
                 document.getElementById('statsGrid').style.display = 'none';
 
                 startTime = Date.now();
-                pitchTimer = setInterval(() => {
+                timerInt = setInterval(() => {
                     const d = Math.floor((Date.now() - startTime)/1000);
                     const m = String(Math.floor(d/60)).padStart(2,'0');
                     const s = String(d%60).padStart(2,'0');
                     document.getElementById('timer').textContent = `${m}:${s}`;
                 }, 1000);
 
-            } else { stopPitch(); }
-        }
-
-        function stopPitch() {
-            if(isRecording && mediaRecorder) mediaRecorder.stop();
-            isRecording = false;
-            clearInterval(pitchTimer);
-            document.getElementById('btnPitchAction').textContent = "⏳ Analyse...";
-            document.getElementById('btnPitchAction').classList.remove('btn-red');
+            } else {
+                if(mediaRecorder) mediaRecorder.stop();
+                isPitchRecording = false;
+                clearInterval(timerInt);
+                document.getElementById('btnPitchAction').textContent = "⏳ Analyse...";
+                document.getElementById('btnPitchAction').classList.remove('btn-red');
+            }
         }
 
         async function analyzeAudio(blob) {
             const formData = new FormData();
             formData.append("file", blob, "pitch.webm");
             try {
-                // Appel API via notre wrapper
                 const res = await apiCall('/analyze_audio', formData);
                 const data = await res.json();
                 
@@ -647,23 +625,6 @@
 
             } catch(e) { console.error(e); alert("Erreur réseau"); }
         }
-
-        // --- POLLING ---
-        let aiIsSpeaking = false; let coolDownActive = false; let pollingInterval;
-        
-        function startChatPolling() {
-            if (pollingInterval) clearInterval(pollingInterval);
-            pollingInterval = setInterval(async () => {
-                if (currentMode !== 'chat') return;
-                try {
-                    // Appel API via notre wrapper
-                    const res = await apiCall('/status');
-                    // On ne fait rien du résultat pour l'instant car c'est stateless
-                } catch(e){}
-            }, 500); 
-        }
-        function stopChatPolling() { clearInterval(pollingInterval); }
-        async function forceStop() { await apiCall('/stop'); }
 
     </script>
 </body>
