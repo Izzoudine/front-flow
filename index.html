@@ -316,40 +316,24 @@
         </div>
     </div>
 
-    <script>
+ <script>
         // ==========================================
-        // 1. CONFIGURATION RÉSEAU (NGROK)
+        // 1. CONFIGURATION RÉSEAU (Vital pour Ngrok)
         // ==========================================
         const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
         
-        let BASE_URL;
-        let WS_URL;
-
-        if (isLocal) {
-            BASE_URL = "http://127.0.0.1:8001"; // Port 8001 en local
-            WS_URL = "ws://127.0.0.1:8001/ws/listen";
-            console.log("🔧 Mode Local");
-        } else {
-            // TON LIEN NGROK EXACT
-            const PROD_API = "https://oscillometric-unexterminated-dionne.ngrok-free.dev"; 
-            BASE_URL = PROD_API;
-            WS_URL = PROD_API.replace("https://", "wss://") + "/ws/listen";
-            console.log("🚀 Mode Prod : " + PROD_API);
-        }
-
+        // TA VRAIE URL NGROK (Celle qui marche)
+        const PROD_API = "https://oscillometric-unexterminated-dionne.ngrok-free.dev"; 
+        
+        let BASE_URL = isLocal ? "http://127.0.0.1:8001" : PROD_API;
+        let WS_URL = isLocal ? "ws://127.0.0.1:8001/ws/listen" : PROD_API.replace("https://", "wss://") + "/ws/listen";
+        
         document.getElementById('networkInfo').textContent = isLocal ? "Mode Local" : "Mode Production";
 
-        // ==========================================
-        // 2. FONCTION API UNIVERSELLE (LE SECRET)
-        // ==========================================
+        // Fonction magique pour passer le mur de sécurité Ngrok
         async function apiCall(endpoint, body) {
-            const headers = {
-                'ngrok-skip-browser-warning': 'true'
-            };
-            
-            if(!(body instanceof FormData)) {
-                headers['Content-Type'] = 'application/json';
-            }
+            const headers = { 'ngrok-skip-browser-warning': 'true' };
+            if(!(body instanceof FormData)) headers['Content-Type'] = 'application/json';
             
             return fetch(`${BASE_URL}${endpoint}`, {
                 method: 'POST',
@@ -359,22 +343,61 @@
         }
 
         // ==========================================
-        // 3. LOGIQUE APPLICATION
+        // 2. ÉTAT GLOBAL
         // ==========================================
         let currentMode = 'config';
         let selectedChar = 'Lucas'; 
         let selectedGender = 'homme'; 
         let selectedEmoji = '🧑‍🎓';
         
-        // On essaie les deux moteurs possibles
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition;
-        let isProcessing = false;
+        
+        // --- ETATS CRITIQUES ---
+        let isProcessing = false; // Empêche l'écho (Vrai quand l'IA parle)
+        let isPitchRecording = false; // Empêche les conflits Pitch/Chat
+        let mediaRecorder, chunks=[], timerInt, startTime;
 
-        function selectChar(name, gender, emoji, el) {
-            selectedChar = name; selectedGender = gender; selectedEmoji = emoji;
-            document.querySelectorAll('.char-opt').forEach(e => e.classList.remove('selected'));
-            el.classList.add('selected');
+        // ==========================================
+        // 3. FONCTIONS UTILITAIRES (DONT STOPPITCH)
+        // ==========================================
+
+        function selectChar(n,g,e,el){ selectedChar=n;selectedGender=g;selectedEmoji=e; document.querySelectorAll('.char-opt').forEach(x=>x.classList.remove('selected')); el.classList.add('selected'); }
+        
+        // CELLE QUI MANQUAIT :
+        function stopPitch(forceReset = false) {
+            if(mediaRecorder && mediaRecorder.state !== 'inactive') {
+                if(forceReset) chunks = []; // On vide pour ne pas analyser si on change d'onglet
+                mediaRecorder.stop();
+            }
+            isPitchRecording = false;
+            clearInterval(timerInt);
+            document.getElementById('btnPitchAction').textContent = "🎙️ Enregistrer";
+            document.getElementById('btnPitchAction').className = "btn-action";
+            if(forceReset) document.getElementById('timer').textContent = "00:00";
+        }
+
+        function stopChat() {
+            if (recognition) recognition.abort();
+        }
+
+        function switchTab(tabName) {
+            currentMode = tabName;
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            const btns = document.querySelectorAll('.nav-btn');
+            if(tabName === 'chat') btns[0].classList.add('active');
+            if(tabName === 'pitch') btns[1].classList.add('active');
+            
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+
+            if (tabName === 'chat') {
+                stopPitch(true); // Arrêt propre du pitch
+                startChat();
+            } else {
+                stopChat(); 
+                stopPitch(true); // Reset visuel
+            }
         }
 
         async function startSession() {
@@ -390,41 +413,15 @@
                 document.getElementById('screen-app').classList.add('active');
                 document.getElementById('avatarDisplay').textContent = selectedEmoji;
                 switchTab('chat');
-
-            } catch (e) {
-                alert(`ERREUR : Impossible de contacter le serveur. Vérifie ./startup.sh`+ e);
-            }
-        }
-
-        function switchTab(tabName) {
-            currentMode = tabName;
-            
-            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-            const btns = document.querySelectorAll('.nav-btn');
-            if(tabName === 'chat') btns[0].classList.add('active');
-            if(tabName === 'pitch') btns[1].classList.add('active');
-            
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.getElementById(`tab-${tabName}`).classList.add('active');
-
-            if (tabName === 'chat') {
-                stopPitch(); 
-                startChat();
-            } else {
-                stopPitch(); 
-                stopChat();
-            }
+            } catch (e) { alert("ERREUR CONNEXION : " + e); }
         }
 
         // ==========================================
-        // 4. RECONNAISSANCE VOCALE (CHAT INSTANTANÉ)
+        // 4. CHAT VOCAL (ANTI-ECHO & INSTANTANÉ)
         // ==========================================
-        
         function startChat() {
-            if (!SpeechRecognition) {
-                alert("Ce navigateur ne supporte pas la reconnaissance vocale native. Utilisez Google Chrome sur PC ou Android.");
-                return;
-            }
+            if (!SpeechRecognition) { alert("Utilisez Chrome."); return; }
+            if (isProcessing) return; // Si l'IA parle, le micro reste coupé
 
             if (recognition) { try{ recognition.start(); } catch(e){} return; }
 
@@ -434,26 +431,24 @@
             recognition.interimResults = true;
 
             recognition.onresult = (event) => {
-                // Si l'IA parle, on ignore ce que le micro entend (ANTI ECHO)
+                // SÉCURITÉ ANTI-ECHO : Si l'IA parle, on ignore le micro
                 if (isProcessing) return;
 
                 let interim = "";
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     if (event.results[i].isFinal) {
-                        // C'EST ICI LE CHANGEMENT : Envoi IMMÉDIAT
                         let text = event.results[i][0].transcript;
                         document.getElementById('chatFinal').textContent = text;
-                        sendToBrain(text); // <-- PAS DE DELAI, PAS DE TIMEOUT
+                        sendToBrain(text); // ENVOI DIRECT (Pas de délai)
                     } else {
                         interim += event.results[i][0].transcript;
                     }
                 }
-                
                 document.getElementById('chatInterim').textContent = interim;
             };
             
             recognition.onend = () => {
-                // Relance auto si on n'est pas en train de réfléchir
+                // On ne relance QUE si l'IA a fini de parler
                 if (!isProcessing && currentMode === 'chat') {
                     try { recognition.start(); } catch(e){}
                 }
@@ -464,17 +459,13 @@
             document.getElementById('avatarDisplay').className = "avatar listening";
         }
 
-        function stopChat() {
-            if (recognition) recognition.abort();
-        }
-
         // ==========================================
-        // 5. CERVEAU + AUDIO (KILL SWITCH)
+        // 5. CERVEAU (KILL SWITCH MICRO)
         // ==========================================
         async function sendToBrain(text) {
             if(!text || text.trim() === "") return;
 
-            // 1. KILL SWITCH : On coupe le micro IMMÉDIATEMENT
+            // KILL SWITCH : On coupe le micro IMMÉDIATEMENT
             isProcessing = true;
             if (recognition) recognition.abort(); 
 
@@ -486,30 +477,29 @@
             document.getElementById('chatInterim').textContent = "";
 
             try {
-                // Appel API
                 const res = await apiCall('/chat', {text: text});
                 if(!res.ok) throw new Error("Erreur serveur");
 
-                // Lecture Audio
                 const blob = await res.blob();
                 const audioUrl = URL.createObjectURL(blob);
                 const audio = new Audio(audioUrl);
 
                 audio.onplay = () => {
+                    if (recognition) recognition.abort(); // Double sécurité
                     avatar.className = "avatar speaking";
                     status.textContent = "🔊 Flow parle...";
                     status.style.color = "#0ea5e9";
                 };
 
                 audio.onended = () => {
-                    // 2. RÉSURRECTION : On rallume le micro
                     avatar.className = "avatar listening";
                     status.textContent = "À vous...";
                     status.style.color = "#64748b";
                     
+                    // Petit délai avant de rouvrir le micro (évite d'entendre la fin du son)
                     setTimeout(() => {
                         isProcessing = false;
-                        if(currentMode === 'chat') try{recognition.start()}catch(e){}
+                        if (currentMode === 'chat') startChat(); 
                     }, 500); 
                 };
 
@@ -517,10 +507,10 @@
 
             } catch(e) {
                 console.error(e);
-                avatar.className = "avatar listening"; 
+                avatar.className = "avatar listening";
                 status.textContent = "Erreur réseau";
                 isProcessing = false; 
-                try{recognition.start()}catch(e){}
+                startChat(); // On relance quand même en cas d'erreur
             }
         }
 
@@ -532,33 +522,29 @@
         }
 
         // ==========================================
-        // 6. PITCH LOGIC (COMPLET)
+        // 6. PITCH ANALYZER (LOGIQUE)
         // ==========================================
-        let mediaRecorder, chunks=[], timerInt, startTime;
-        let isPitchRecording = false;
-
         async function getMicrophone() {
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') return null; // Déjà actif
             try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch(e) { return null; }
         }
 
         async function togglePitch() {
             if (!isPitchRecording) {
-                stopChat(); // Important
+                // START
+                stopChat(); // On coupe le chat
                 const stream = await getMicrophone();
-                if (!stream) { 
-                    alert("Erreur Micro. Si vous êtes sur iPhone, assurez-vous d'utiliser Safari."); 
-                    return; 
-                }
+                if (!stream) { alert("Micro inaccessible."); return; }
 
                 mediaRecorder = new MediaRecorder(stream);
                 chunks = [];
                 mediaRecorder.ondataavailable = event => chunks.push(event.data);
                 
                 mediaRecorder.onstop = async () => {
-                    const blob = new Blob(chunks, { type: 'audio/webm' });
+                    // Si vide (arrêt forcé), on sort
+                    if(chunks.length === 0) return;
+
                     const fd = new FormData(); 
-                    fd.append("file", blob, "pitch.webm");
+                    fd.append("file", new Blob(chunks, { type: 'audio/webm' }), "pitch.webm");
                     
                     document.getElementById('btnPitchAction').textContent = "Analyse en cours...";
                     
@@ -568,6 +554,7 @@
                         
                         if (data.status === 'error') { alert("Erreur: " + data.message); return; }
 
+                        // Remplissage Stats
                         document.getElementById('statsGrid').style.display = 'grid';
                         document.getElementById('statWPM').textContent = data.metrics.wpm;
                         document.getElementById('statFillers').textContent = data.metrics.fillers;
@@ -575,11 +562,12 @@
                         document.getElementById('pitchTranscript').textContent = data.metrics.transcript;
                         document.getElementById('pitchTranscript').style.display = 'block';
                         
+                        // Remplissage Rapport
                         let rep; try { rep = JSON.parse(data.advice.replace(/```json/g,'').replace(/```/g,'').trim()); }
-                        catch(e) { rep = {note:"?", conseil: "Erreur parsing JSON"}; }
+                        catch(e) { rep = {note:"?", conseil: "Erreur parsing"}; }
 
                         document.getElementById('reportCard').style.display = 'block';
-                        document.getElementById('rScore').textContent = rep.note || "?";
+                        document.getElementById('rScore').textContent = rep.note || "N/A";
                         document.getElementById('rHook').textContent = rep.accroche_probleme || "-";
                         document.getElementById('rSol').textContent = rep.solution_cible || "-";
                         document.getElementById('rBiz').textContent = rep.unicite_business || "-";
@@ -587,12 +575,12 @@
                         document.getElementById('rTip').textContent = rep.conseil || "-";
 
                         const missingBox = document.getElementById('missingBox');
-                        if (report.elements_manquants && report.elements_manquants.length > 5 && !report.elements_manquants.includes("Aucun")) {
+                        if (report.elements_manquants && !report.elements_manquants.includes("Aucun")) {
                             missingBox.style.display = 'block';
                             document.getElementById('rMissing').textContent = report.elements_manquants;
                         } else { missingBox.style.display = 'none'; }
 
-                    } catch(e) { console.error(e); alert("Erreur lors de l'analyse."); }
+                    } catch(e) { alert("Erreur analyse."); }
                     
                     document.getElementById('btnPitchAction').textContent = "🎙️ Recommencer";
                     document.getElementById('btnPitchAction').className = "btn-action";
@@ -603,32 +591,16 @@
                 
                 document.getElementById('btnPitchAction').innerHTML = '🛑 Terminer';
                 document.getElementById('btnPitchAction').className = "btn-action btn-red";
-                document.getElementById('pitchTranscript').style.display = 'block';
-                document.getElementById('pitchTranscript').textContent = "🔴 Enregistrement...";
-                document.getElementById('reportCard').style.display = 'none';
-                document.getElementById('statsGrid').style.display = 'none';
-
                 startTime = Date.now();
-                timerInt = setInterval(() => {
-                    const d = Math.floor((Date.now() - startTime)/1000);
-                    const m = String(Math.floor(d/60)).padStart(2,'0');
-                    const s = String(d%60).padStart(2,'0');
-                    document.getElementById('timer').textContent = `${m}:${s}`;
+                timerInt = setInterval(()=> {
+                    const d = Math.floor((Date.now()-startTime)/1000);
+                    document.getElementById('timer').textContent = `${String(Math.floor(d/60)).padStart(2,'0')}:${String(d%60).padStart(2,'0')}`;
                 }, 1000);
 
             } else {
-                if(mediaRecorder) mediaRecorder.stop();
-                isPitchRecording = false;
-                clearInterval(timerInt);
+                // STOP MANUEL
+                stopPitch(false);
             }
-        }
-
-        function stopPitch() {
-            if(mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-            isPitchRecording = false;
-            clearInterval(timerInt);
-            document.getElementById('btnPitchAction').textContent = "🎙️ Enregistrer";
-            document.getElementById('btnPitchAction').className = "btn-action";
         }
     </script>
 </body>
