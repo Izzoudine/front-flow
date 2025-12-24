@@ -622,6 +622,14 @@
                 clearInterval(timerInt);
             }
         }
+
+        function stopPitch() {
+            if(mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+            isPitchRecording = false;
+            clearInterval(timerInt);
+            document.getElementById('btnPitchAction').textContent = "🎙️ Enregistrer";
+            document.getElementById('btnPitchAction').className = "btn-action";
+        }
     </script>
 </body>
 </html>
