@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Flow - Ultimate Audio</title>
+    <title>Flow - Ultimate Audio Fix</title>
     <style>
         /* --- 1. VARIABLES & THEME FLOW --- */
         :root {
@@ -245,8 +245,12 @@
 
         <div id="tab-chat" class="tab-content active">
             <div class="avatar" id="avatarDisplay">🧑‍🎓</div>
-            <div style="margin-top:15px; color:#64748b; font-size:0.9rem; font-weight:600;" id="chatStatus">Chargement...</div>
             
+            <div style="margin-top:15px; text-align:center;">
+                <div style="color:#64748b; font-size:0.9rem; font-weight:600;" id="chatStatus">Chargement...</div>
+                <div style="color:#334155; font-size:0.8rem; margin-top:5px;" id="volumeDebug">Vol: 0</div>
+            </div>
+
             <div class="chat-transcript">
                 <span id="chatFinal" style="color:white; font-weight:600;"></span>
                 <span id="chatInterim" style="color:#64748b; font-style:italic;"></span>
@@ -322,7 +326,7 @@
     // ==========================================
     const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
     
-    // --- TON URL NGROK (Met la bonne ici) ---
+    // --- TON URL NGROK ---
     const PROD_API = "https://oscillometric-unexterminated-dionne.ngrok-free.dev"; 
     
     let BASE_URL = isLocal ? "http://127.0.0.1:8001" : PROD_API;
@@ -423,7 +427,7 @@
     }
 
     // ==========================================
-    // 4. CHAT AUDIO (Compatible Partout)
+    // 4. CHAT AUDIO (Compatible Partout + FIX SENSIBILITÉ)
     // ==========================================
     async function startChatListening() {
         if (isProcessing || currentMode !== 'chat') return;
@@ -433,16 +437,24 @@
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             microphoneStream = stream;
 
-            // 1. Enregistreur
+            // 1. Enregistreur - NOTE: On lance avec 500ms pour forcer la création de blobs
             chatRecorder = new MediaRecorder(stream);
             chatChunks = [];
-            chatRecorder.ondataavailable = e => chatChunks.push(e.data);
+            chatRecorder.ondataavailable = e => {
+                if(e.data.size > 0) chatChunks.push(e.data);
+            };
             
             chatRecorder.onstop = async () => {
                 // Si arrêt normal (pas reset) et des données
                 if(chatChunks.length > 0 && !isProcessing) {
                     const blob = new Blob(chatChunks, { type: 'audio/webm' });
-                    sendAudioToBrain(blob);
+                    // On n'envoie que si le blob fait une taille décente (> 1ko)
+                    if(blob.size > 1000) {
+                        sendAudioToBrain(blob);
+                    } else {
+                        console.log("Audio trop court ignoré");
+                        if (currentMode === 'chat') startChatListening(); // Relance si ignoré
+                    }
                 }
             };
 
@@ -453,7 +465,9 @@
             analyser.fftSize = 512;
             source.connect(analyser);
             
-            chatRecorder.start();
+            // IMPORTANT : On lance avec timeslice pour avoir des chunks réguliers
+            chatRecorder.start(500); 
+            
             document.getElementById('chatStatus').textContent = "Je vous écoute (Parlez)...";
             document.getElementById('avatarDisplay').className = "avatar listening";
             
@@ -464,7 +478,8 @@
             document.getElementById('chatStatus').textContent = "Erreur Micro (Vérifiez HTTPS)";
         }
     }
-function detectSilence() {
+
+    function detectSilence() {
         if (!chatRecorder || chatRecorder.state !== 'running') return;
 
         const bufferLength = analyser.frequencyBinCount;
@@ -476,40 +491,37 @@ function detectSilence() {
         for(let i = 0; i < bufferLength; i++) sum += dataArray[i];
         let average = sum / bufferLength;
 
-        // Seuil ajusté (si ton micro capte trop de bruit de fond, augmente à 15 ou 20)
-        const THRESHOLD = 12; 
+        // DEBUG VISUEL : Affiche le volume pour que tu puisses régler le seuil
+        document.getElementById('volumeDebug').textContent = "Vol: " + Math.round(average);
 
-        const statusEl = document.getElementById('chatStatus');
-        const avatarEl = document.getElementById('avatarDisplay');
+        // SEUIL RÉDUIT À 5 (Très sensible)
+        const THRESHOLD = 5; 
 
         if (average > THRESHOLD) {
             // TU PARLES
             isSpeaking = true;
-            statusEl.textContent = "🔊 Je vous entends...";
-            statusEl.style.color = "#10b981"; // Vert
-            statusEl.style.fontWeight = "bold";
-            avatarEl.style.borderColor = "#10b981"; // Bordure verte
-            
+            document.getElementById('chatStatus').textContent = "🔊 Je vous entends...";
+            document.getElementById('chatStatus').style.color = "#10b981";
+            document.getElementById('avatarDisplay').style.borderColor = "#10b981";
             clearTimeout(silenceTimer);
         } else {
             // SILENCE
             if (isSpeaking) {
-                // Le silence vient de commencer
                 isSpeaking = false;
+                document.getElementById('chatStatus').textContent = "⏳ Fin détectée... Envoi dans 1.2s";
+                document.getElementById('chatStatus').style.color = "#f59e0b";
+                document.getElementById('avatarDisplay').style.borderColor = "#f59e0b";
                 
-                statusEl.textContent = "⏳ Fin détectée... Envoi dans 1s";
-                statusEl.style.color = "#f59e0b"; // Orange
-                avatarEl.style.borderColor = "#f59e0b"; // Bordure orange
-                
-                // On lance le chrono
+                // Silence de 1.2s = Fin de phrase
                 silenceTimer = setTimeout(() => {
-                    statusEl.textContent = "🚀 Envoi en cours...";
+                    document.getElementById('chatStatus').textContent = "🚀 Envoi...";
                     stopChatRecording(); 
-                }, 1200); // 1.2 secondes de délai
+                }, 1200); 
             }
         }
         requestAnimationFrame(detectSilence);
     }
+
     function stopChatRecording() {
         if (chatRecorder && chatRecorder.state !== 'inactive') {
             chatRecorder.stop();
@@ -527,7 +539,9 @@ function detectSilence() {
         const avatar = document.getElementById('avatarDisplay');
         const status = document.getElementById('chatStatus');
         avatar.className = "avatar thinking";
+        avatar.style.borderColor = "#f59e0b"; // Couleur réflexion
         status.textContent = "🧠 Réflexion...";
+        status.style.color = "#f59e0b";
         
         const fd = new FormData();
         fd.append("audio_file", audioBlob, "user_input.webm");
@@ -544,6 +558,7 @@ function detectSilence() {
 
             currentAudioResponse.onplay = () => {
                 avatar.className = "avatar speaking";
+                avatar.style.borderColor = "#0ea5e9";
                 status.textContent = "🔊 Flow parle...";
                 status.style.color = "#0ea5e9";
                 document.getElementById('chatFinal').textContent = "(Réponse audio reçue)";
@@ -552,6 +567,7 @@ function detectSilence() {
             currentAudioResponse.onended = () => {
                 currentAudioResponse = null;
                 isProcessing = false;
+                avatar.style.borderColor = "#475569"; // Reset couleur
                 if (currentMode === 'chat') startChatListening(); // Relance auto
             };
             
