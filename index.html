@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Flow - Ultimate Final</title>
+    <title>Flow - Ultimate Audio</title>
     <style>
         /* --- 1. VARIABLES & THEME FLOW --- */
         :root {
@@ -322,7 +322,7 @@
     // ==========================================
     const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
     
-    // --- TON URL NGROK ---
+    // --- TON URL NGROK (Met la bonne ici) ---
     const PROD_API = "https://oscillometric-unexterminated-dionne.ngrok-free.dev"; 
     
     let BASE_URL = isLocal ? "http://127.0.0.1:8001" : PROD_API;
@@ -348,61 +348,63 @@
     let selectedGender = 'homme'; 
     let selectedEmoji = '🧑‍🎓';
     
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let recognition;
-    
-    // Variables Chat
+    // Variables CHAT (Nouvelle approche Audio)
     let isProcessing = false; 
-    let currentAudio = null; // Pour pouvoir couper le son
-    let silenceTimer = null; // Pour attendre que tu finisses ta phrase
-    let accumulatedText = ""; // Pour stocker la phrase complète
+    let currentAudioResponse = null; 
+    let chatRecorder = null;
+    let chatChunks = [];
+    let audioContext = null;
+    let analyser = null;
+    let microphoneStream = null;
+    let silenceTimer = null;
+    let isSpeaking = false;
 
-    // Variables Pitch
+    // Variables PITCH
     let isPitchRecording = false; 
-    let mediaRecorder, chunks=[], timerInt, startTime;
+    let pitchRecorder, pitchChunks=[], timerInt, startTime;
 
     // ==========================================
     // 3. FONCTIONS UTILITAIRES
     // ==========================================
-    function selectChar(n,g,e,el){ selectedChar=n;selectedGender=g;selectedEmoji=e; document.querySelectorAll('.char-opt').forEach(x=>x.classList.remove('selected')); el.classList.add('selected'); }
+    function selectChar(n,g,e,el){ 
+        selectedChar=n;
+        selectedGender=g;
+        selectedEmoji=e; 
+        document.querySelectorAll('.char-opt').forEach(x=>x.classList.remove('selected')); 
+        el.classList.add('selected'); 
+    }
     
-    // Reset total
     function resetStates() {
-        // Stop Audio
-        if(currentAudio) { currentAudio.pause(); currentAudio = null; }
-        
-        // Stop Reco Chat
-        if(recognition) recognition.abort();
-        clearTimeout(silenceTimer);
+        if(currentAudioResponse) { currentAudioResponse.pause(); currentAudioResponse = null; }
+        stopChatRecording();
         isProcessing = false;
-        accumulatedText = "";
-
+        
         // Stop Pitch
-        if(mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+        if(pitchRecorder && pitchRecorder.state !== 'inactive') pitchRecorder.stop();
         clearInterval(timerInt);
         isPitchRecording = false;
         
-        // Reset UI Timer
         document.getElementById('timer').textContent = "00:00";
     }
 
     function switchTab(tabName) {
-        resetStates(); // On nettoie tout avant de changer
+        resetStates();
         
         currentMode = tabName;
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        
         const btns = document.querySelectorAll('.nav-btn');
         if(tabName === 'chat') btns[0].classList.add('active');
         if(tabName === 'pitch') btns[1].classList.add('active');
-        
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
         document.getElementById(`tab-${tabName}`).classList.add('active');
 
-        // Reset UI boutons
-        document.getElementById('btnPitchAction').textContent = "🎙️ Enregistrer";
-        document.getElementById('btnPitchAction').className = "btn-action";
+        // Init AudioContext au clic (Requis par les navigateurs)
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
 
-        if (tabName === 'chat') startChat();
+        if (tabName === 'chat') startChatListening();
     }
 
     async function startSession() {
@@ -421,175 +423,170 @@
     }
 
     // ==========================================
-    // 4. CHAT VOCAL (CORRIGÉ : Délai + Accumulation)
+    // 4. CHAT AUDIO (Compatible Partout)
     // ==========================================
-    function startChat() {
-        if (!SpeechRecognition) return;
-        if (isProcessing) return;
-        if (currentMode !== 'chat') return;
+    async function startChatListening() {
+        if (isProcessing || currentMode !== 'chat') return;
 
-        // On s'assure qu'une ancienne instance ne tourne pas
-        if (recognition) try{ recognition.abort(); } catch(e){}
+        try {
+            // Demande accès micro
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            microphoneStream = stream;
 
-        recognition = new SpeechRecognition();
-        recognition.lang = "fr-FR";
-        recognition.continuous = true;
-        recognition.interimResults = true;
-
-        recognition.onresult = (event) => {
-            if (isProcessing) return;
-
-            let interim = "";
-            let finalChunk = "";
-
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                if (event.results[i].isFinal) {
-                    finalChunk += event.results[i][0].transcript + " ";
-                } else {
-                    interim += event.results[i][0].transcript;
+            // 1. Enregistreur
+            chatRecorder = new MediaRecorder(stream);
+            chatChunks = [];
+            chatRecorder.ondataavailable = e => chatChunks.push(e.data);
+            
+            chatRecorder.onstop = async () => {
+                // Si arrêt normal (pas reset) et des données
+                if(chatChunks.length > 0 && !isProcessing) {
+                    const blob = new Blob(chatChunks, { type: 'audio/webm' });
+                    sendAudioToBrain(blob);
                 }
-            }
+            };
 
-            // Gestion de l'accumulation
-            if (finalChunk !== "") {
-                accumulatedText += finalChunk;
-                document.getElementById('chatFinal').textContent = accumulatedText;
-                
-                // RESET DU TIMER DE SILENCE
-                clearTimeout(silenceTimer);
-                
-                // On attend 1.5 secondes de silence avant d'envoyer
-                silenceTimer = setTimeout(() => {
-                    sendToBrain(accumulatedText);
-                    accumulatedText = ""; // Reset pour la prochaine phrase
-                }, 1500); 
-            }
+            // 2. Détecteur de Silence (VAD)
+            if(audioContext.state === 'suspended') await audioContext.resume();
+            const source = audioContext.createMediaStreamSource(stream);
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 512;
+            source.connect(analyser);
+            
+            chatRecorder.start();
+            document.getElementById('chatStatus').textContent = "Je vous écoute (Parlez)...";
+            document.getElementById('avatarDisplay').className = "avatar listening";
+            
+            detectSilence(); // Lance la boucle
 
-            document.getElementById('chatInterim').textContent = interim;
-        };
-        
-        recognition.onend = () => {
-            // Si on ne traite pas une réponse, on relance le micro pour écouter la suite
-            if (!isProcessing && currentMode === 'chat') {
-                try { recognition.start(); } catch(e){}
-            }
-        };
-
-        try { recognition.start(); } catch(e){}
-        document.getElementById('chatStatus').textContent = "Je vous écoute...";
-        document.getElementById('avatarDisplay').className = "avatar listening";
+        } catch (e) {
+            console.error("Erreur Micro", e);
+            document.getElementById('chatStatus').textContent = "Erreur Micro (Vérifiez HTTPS)";
+        }
     }
 
-    async function sendToBrain(text) {
-        if(!text || text.trim() === "") return;
-        
-        // LOCK
-        isProcessing = true;
-        if (recognition) recognition.abort(); 
-        clearTimeout(silenceTimer);
+    function detectSilence() {
+        if (!chatRecorder || chatRecorder.state !== 'running') return;
 
-        // UI
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyser.getByteFrequencyData(dataArray);
+
+        // Calcul volume moyen
+        let sum = 0;
+        for(let i = 0; i < bufferLength; i++) sum += dataArray[i];
+        let average = sum / bufferLength;
+
+        const THRESHOLD = 12; // Seuil de sensibilité (ajuster si besoin)
+
+        if (average > THRESHOLD) {
+            isSpeaking = true;
+            document.getElementById('chatStatus').textContent = "Je vous entends...";
+            document.getElementById('chatStatus').style.color = "#10b981";
+            clearTimeout(silenceTimer);
+        } else {
+            if (isSpeaking) {
+                isSpeaking = false;
+                document.getElementById('chatStatus').textContent = "Fin de phrase ?";
+                document.getElementById('chatStatus').style.color = "#64748b";
+                
+                // Silence de 1.2s = Fin de phrase
+                silenceTimer = setTimeout(() => {
+                    stopChatRecording(); 
+                }, 1200); 
+            }
+        }
+        requestAnimationFrame(detectSilence);
+    }
+
+    function stopChatRecording() {
+        if (chatRecorder && chatRecorder.state !== 'inactive') {
+            chatRecorder.stop();
+        }
+        // Éteindre le micro visuellement
+        if (microphoneStream) {
+            microphoneStream.getTracks().forEach(track => track.stop());
+        }
+        clearTimeout(silenceTimer);
+    }
+
+    async function sendAudioToBrain(audioBlob) {
+        isProcessing = true; // Bloque le micro
+        
         const avatar = document.getElementById('avatarDisplay');
         const status = document.getElementById('chatStatus');
         avatar.className = "avatar thinking";
         status.textContent = "🧠 Réflexion...";
-        document.getElementById('chatInterim').textContent = "";
+        
+        const fd = new FormData();
+        fd.append("audio_file", audioBlob, "user_input.webm");
 
         try {
-            const res = await apiCall('/chat', {text: text});
+            // ENVOI A TON NOUVEAU ENDPOINT
+            const res = await apiCall('/chat_audio', fd);
+            
             if(!res.ok) throw new Error("Erreur serveur");
             const blob = await res.blob();
             const audioUrl = URL.createObjectURL(blob);
             
-            // On stocke dans la variable globale pour pouvoir stopper
-            currentAudio = new Audio(audioUrl);
+            currentAudioResponse = new Audio(audioUrl);
 
-            currentAudio.onplay = () => {
+            currentAudioResponse.onplay = () => {
                 avatar.className = "avatar speaking";
                 status.textContent = "🔊 Flow parle...";
                 status.style.color = "#0ea5e9";
+                document.getElementById('chatFinal').textContent = "(Réponse audio reçue)";
             };
 
-            currentAudio.onended = () => {
-                currentAudio = null; // Nettoyage
-                avatar.className = "avatar listening";
-                status.textContent = "À vous...";
-                status.style.color = "#64748b";
-                
-                setTimeout(() => {
-                    isProcessing = false;
-                    if (currentMode === 'chat') startChat(); 
-                }, 500); 
+            currentAudioResponse.onended = () => {
+                currentAudioResponse = null;
+                isProcessing = false;
+                if (currentMode === 'chat') startChatListening(); // Relance auto
             };
             
-            currentAudio.play();
+            currentAudioResponse.play();
 
         } catch(e) {
             console.error(e);
             avatar.className = "avatar listening";
             status.textContent = "Erreur réseau";
             isProcessing = false; 
-            startChat();
+            startChatListening();
         }
     }
 
     async function forceStop() {
-        // 1. Appel API pour vider l'historique côté serveur si nécessaire
         apiCall('/stop');
-        
-        // 2. Arrêt immédiat de l'audio en cours
-        if(currentAudio) {
-            currentAudio.pause();
-            currentAudio.currentTime = 0;
-            currentAudio = null;
-        }
-
-        // 3. Reset variables
-        clearTimeout(silenceTimer);
-        accumulatedText = "";
-        isProcessing = false;
-        
-        // 4. Relance propre
-        stopChat();
-        startChat();
+        resetStates();
+        setTimeout(() => { if(currentMode === 'chat') startChatListening(); }, 500);
     }
 
     // ==========================================
-    // 5. PITCH ANALYZER (CORRIGÉ : Timer Stop)
+    // 5. PITCH ANALYZER
     // ==========================================
-    async function getMicrophone() {
-        try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch(e) { return null; }
-    }
-
     async function togglePitch() {
-        // --- DÉMARRAGE ---
         if (!isPitchRecording) {
-            resetStates(); // Stop chat et audio fantôme
-            const stream = await getMicrophone();
-            if (!stream) { alert("Micro inaccessible."); return; }
-
-            mediaRecorder = new MediaRecorder(stream);
-            chunks = [];
+            // START
+            resetStates(); 
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             
-            mediaRecorder.ondataavailable = event => chunks.push(event.data);
+            pitchRecorder = new MediaRecorder(stream);
+            pitchChunks = [];
+            pitchRecorder.ondataavailable = e => pitchChunks.push(e.data);
             
-            mediaRecorder.onstop = async () => {
-                if(chunks.length === 0) return;
-
+            pitchRecorder.onstop = async () => {
+                if(pitchChunks.length === 0) return;
                 const fd = new FormData(); 
-                fd.append("file", new Blob(chunks, { type: 'audio/webm' }), "pitch.webm");
+                fd.append("file", new Blob(pitchChunks, { type: 'audio/webm' }), "pitch.webm");
                 
-                // UI : Analyse
                 document.getElementById('btnPitchAction').textContent = "⌛ Analyse en cours...";
-                document.getElementById('btnPitchAction').style.opacity = "0.7";
                 
                 try {
                     const res = await apiCall('/analyze_audio', fd);
                     const data = await res.json();
                     
-                    if (data.status === 'error') { alert("Erreur: " + data.message); return; }
+                    if(data.status === 'error') throw new Error(data.message);
 
-                    // AFFICHER RÉSULTATS
                     document.getElementById('statsGrid').style.display = 'grid';
                     document.getElementById('statWPM').textContent = data.metrics.wpm;
                     document.getElementById('statFillers').textContent = data.metrics.fillers;
@@ -597,38 +594,31 @@
                     document.getElementById('pitchTranscript').textContent = data.metrics.transcript;
                     document.getElementById('pitchTranscript').style.display = 'block';
                     
-                    let rep; 
-                    try { 
-                        let rawJson = data.advice.replace(/```json/g,'').replace(/```/g,'').trim();
-                        rep = JSON.parse(rawJson); 
-                    } catch(e) { rep = {note:"?", conseil: "Erreur lecture réponse IA"}; }
+                    let rep; try { rep = JSON.parse(data.advice.replace(/```json/g,'').replace(/```/g,'').trim()); } catch(e) { rep = {}; }
 
                     document.getElementById('reportCard').style.display = 'block';
-                    document.getElementById('rScore').textContent = rep.note || "N/A";
+                    document.getElementById('rScore').textContent = rep.note || "-";
                     document.getElementById('rHook').textContent = rep.accroche_probleme || "-";
                     document.getElementById('rSol').textContent = rep.solution_cible || "-";
                     document.getElementById('rBiz').textContent = rep.unicite_business || "-";
                     document.getElementById('rCta').textContent = rep.cta_action || "-";
                     document.getElementById('rTip').textContent = rep.conseil || "-";
-
+                    
                     const missingBox = document.getElementById('missingBox');
                     if (rep.elements_manquants && !rep.elements_manquants.includes("Aucun") && rep.elements_manquants.length > 2) {
                         missingBox.style.display = 'block';
                         document.getElementById('rMissing').textContent = rep.elements_manquants;
                     } else { missingBox.style.display = 'none'; }
 
-                } catch(e) { alert("Erreur analyse: " + e); }
+                } catch(e) { alert("Erreur: " + e); }
                 
-                // RESET BOUTON FINAL
                 document.getElementById('btnPitchAction').textContent = "🎙️ Recommencer";
                 document.getElementById('btnPitchAction').className = "btn-action";
-                document.getElementById('btnPitchAction').style.opacity = "1";
             };
 
-            mediaRecorder.start();
+            pitchRecorder.start();
             isPitchRecording = true;
-            
-            document.getElementById('btnPitchAction').innerHTML = '🛑 Terminer et Analyser';
+            document.getElementById('btnPitchAction').innerHTML = '🛑 Terminer';
             document.getElementById('btnPitchAction').className = "btn-action btn-red";
             
             startTime = Date.now();
@@ -638,19 +628,11 @@
             }, 1000);
 
         } else {
-            // --- ARRÊT (Correction critique ici) ---
-            
-            // 1. Arrêter le Timer VISUELLEMENT tout de suite
+            // STOP
             clearInterval(timerInt);
-            
-            // 2. Changer l'état
             isPitchRecording = false;
-            
-            // 3. Feedback UI immédiat
             document.getElementById('btnPitchAction').textContent = "Envoi...";
-            
-            // 4. Déclencher l'arrêt du recorder (ce qui lance onstop plus haut)
-            if(mediaRecorder) mediaRecorder.stop();
+            if(pitchRecorder) pitchRecorder.stop();
         }
     }
 </script>
