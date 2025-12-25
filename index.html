@@ -316,292 +316,303 @@
         </div>
     </div>
 
- <script>
-        // ==========================================
-        // 1. CONFIGURATION RÉSEAU (Vital pour Ngrok)
-        // ==========================================
-        const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-        
-        // TA VRAIE URL NGROK (Celle qui marche)
-        const PROD_API = "https://oscillometric-unexterminated-dionne.ngrok-free.dev"; 
-        
-        let BASE_URL = isLocal ? "http://127.0.0.1:8001" : PROD_API;
-        let WS_URL = isLocal ? "ws://127.0.0.1:8001/ws/listen" : PROD_API.replace("https://", "wss://") + "/ws/listen";
-        
-        document.getElementById('networkInfo').textContent = isLocal ? "Mode Local" : "Mode Production";
+<script>
+    // ==========================================
+    // 1. CONFIGURATION RÉSEAU
+    // ==========================================
+    const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    
+    // --- TON URL NGROK ---
+    const PROD_API = "https://oscillometric-unexterminated-dionne.ngrok-free.dev"; 
+    
+    let BASE_URL = isLocal ? "http://127.0.0.1:8001" : PROD_API;
+    
+    document.getElementById('networkInfo').textContent = isLocal ? "Mode Local" : "Mode Production";
 
-        // Fonction magique pour passer le mur de sécurité Ngrok
-        async function apiCall(endpoint, body) {
-            const headers = { 'ngrok-skip-browser-warning': 'true' };
-            if(!(body instanceof FormData)) headers['Content-Type'] = 'application/json';
-            
-            return fetch(`${BASE_URL}${endpoint}`, {
-                method: 'POST',
-                headers: headers,
-                body: body instanceof FormData ? body : JSON.stringify(body)
-            });
+    async function apiCall(endpoint, body) {
+        const headers = { 'ngrok-skip-browser-warning': 'true' };
+        if(!(body instanceof FormData)) headers['Content-Type'] = 'application/json';
+        
+        return fetch(`${BASE_URL}${endpoint}`, {
+            method: 'POST',
+            headers: headers,
+            body: body instanceof FormData ? body : JSON.stringify(body)
+        });
+    }
+
+    // ==========================================
+    // 2. ÉTAT GLOBAL
+    // ==========================================
+    let currentMode = 'config';
+    let selectedChar = 'Lucas'; 
+    let selectedGender = 'homme'; 
+    let selectedEmoji = '🧑‍🎓';
+    
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition;
+    
+    let isProcessing = false; 
+    let isPitchRecording = false; 
+    let mediaRecorder, chunks=[], timerInt, startTime;
+
+    // ==========================================
+    // 3. FONCTIONS UTILITAIRES
+    // ==========================================
+    function selectChar(n,g,e,el){ selectedChar=n;selectedGender=g;selectedEmoji=e; document.querySelectorAll('.char-opt').forEach(x=>x.classList.remove('selected')); el.classList.add('selected'); }
+    
+    // ARRÊT PROPRE (Gestion UI améliorée)
+    function stopPitch(isSubmitting = false) {
+        if(mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop(); // Cela déclenche onstop
         }
 
-        // ==========================================
-        // 2. ÉTAT GLOBAL
-        // ==========================================
-        let currentMode = 'config';
-        let selectedChar = 'Lucas'; 
-        let selectedGender = 'homme'; 
-        let selectedEmoji = '🧑‍🎓';
-        
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        let recognition;
-        
-        // --- ETATS CRITIQUES ---
-        let isProcessing = false; // Empêche l'écho (Vrai quand l'IA parle)
-        let isPitchRecording = false; // Empêche les conflits Pitch/Chat
-        let mediaRecorder, chunks=[], timerInt, startTime;
-
-        // ==========================================
-        // 3. FONCTIONS UTILITAIRES (DONT STOPPITCH)
-        // ==========================================
-
-        function selectChar(n,g,e,el){ selectedChar=n;selectedGender=g;selectedEmoji=e; document.querySelectorAll('.char-opt').forEach(x=>x.classList.remove('selected')); el.classList.add('selected'); }
-        
-        // CELLE QUI MANQUAIT :
-        function stopPitch(forceReset = false) {
-            if(mediaRecorder && mediaRecorder.state !== 'inactive') {
-                if(forceReset) chunks = []; // On vide pour ne pas analyser si on change d'onglet
-                mediaRecorder.stop();
-            }
+        // Si on soumet l'audio, on ne reset pas le bouton tout de suite
+        if (!isSubmitting) {
             isPitchRecording = false;
             clearInterval(timerInt);
             document.getElementById('btnPitchAction').textContent = "🎙️ Enregistrer";
             document.getElementById('btnPitchAction').className = "btn-action";
-            if(forceReset) document.getElementById('timer').textContent = "00:00";
+            document.getElementById('timer').textContent = "00:00";
+            chunks = []; // On vide si on annule
         }
+    }
 
-        function stopChat() {
-            if (recognition) recognition.abort();
+    function stopChat() {
+        if (recognition) recognition.abort();
+    }
+
+    function switchTab(tabName) {
+        currentMode = tabName;
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        const btns = document.querySelectorAll('.nav-btn');
+        if(tabName === 'chat') btns[0].classList.add('active');
+        if(tabName === 'pitch') btns[1].classList.add('active');
+        
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.getElementById(`tab-${tabName}`).classList.add('active');
+
+        if (tabName === 'chat') {
+            stopPitch(false); // Annulation propre
+            startChat();
+        } else {
+            stopChat(); 
+            stopPitch(false); // Annulation propre
         }
+    }
 
-        function switchTab(tabName) {
-            currentMode = tabName;
-            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-            const btns = document.querySelectorAll('.nav-btn');
-            if(tabName === 'chat') btns[0].classList.add('active');
-            if(tabName === 'pitch') btns[1].classList.add('active');
-            
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.getElementById(`tab-${tabName}`).classList.add('active');
+    async function startSession() {
+        try {
+            await apiCall('/config', {
+                character: selectedChar,
+                gender: selectedGender,
+                scenario: document.getElementById('scenarioInput').value,
+                behavior: document.getElementById('behaviorInput').value
+            });
+            document.getElementById('screen-config').classList.remove('active');
+            document.getElementById('screen-app').classList.add('active');
+            document.getElementById('avatarDisplay').textContent = selectedEmoji;
+            switchTab('chat');
+        } catch (e) { alert("ERREUR CONNEXION : " + e); }
+    }
 
-            if (tabName === 'chat') {
-                stopPitch(true); // Arrêt propre du pitch
-                startChat();
-            } else {
-                stopChat(); 
-                stopPitch(true); // Reset visuel
+    // ==========================================
+    // 4. CHAT VOCAL
+    // ==========================================
+    function startChat() {
+        if (!SpeechRecognition) return;
+        if (isProcessing) return;
+
+        if (recognition) { try{ recognition.start(); } catch(e){} return; }
+
+        recognition = new SpeechRecognition();
+        recognition.lang = "fr-FR";
+        recognition.continuous = true;
+        recognition.interimResults = true;
+
+        recognition.onresult = (event) => {
+            if (isProcessing) return;
+            let interim = "";
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                if (event.results[i].isFinal) {
+                    let text = event.results[i][0].transcript;
+                    document.getElementById('chatFinal').textContent = text;
+                    sendToBrain(text);
+                } else {
+                    interim += event.results[i][0].transcript;
+                }
             }
-        }
+            document.getElementById('chatInterim').textContent = interim;
+        };
+        
+        recognition.onend = () => {
+            if (!isProcessing && currentMode === 'chat') try { recognition.start(); } catch(e){}
+        };
+        try { recognition.start(); } catch(e){}
+        document.getElementById('chatStatus').textContent = "Je vous écoute...";
+        document.getElementById('avatarDisplay').className = "avatar listening";
+    }
 
-        async function startSession() {
-            try {
-                await apiCall('/config', {
-                    character: selectedChar,
-                    gender: selectedGender,
-                    scenario: document.getElementById('scenarioInput').value,
-                    behavior: document.getElementById('behaviorInput').value
-                });
-                
-                document.getElementById('screen-config').classList.remove('active');
-                document.getElementById('screen-app').classList.add('active');
-                document.getElementById('avatarDisplay').textContent = selectedEmoji;
-                switchTab('chat');
-            } catch (e) { alert("ERREUR CONNEXION : " + e); }
-        }
+    async function sendToBrain(text) {
+        if(!text || text.trim() === "") return;
+        isProcessing = true;
+        if (recognition) recognition.abort(); 
 
-        // ==========================================
-        // 4. CHAT VOCAL (ANTI-ECHO & INSTANTANÉ)
-        // ==========================================
-        function startChat() {
-            if (!SpeechRecognition) { alert("Utilisez Chrome."); return; }
-            if (isProcessing) return; // Si l'IA parle, le micro reste coupé
+        const avatar = document.getElementById('avatarDisplay');
+        const status = document.getElementById('chatStatus');
+        avatar.className = "avatar thinking";
+        status.textContent = "🧠 Réflexion...";
+        document.getElementById('chatInterim').textContent = "";
 
-            if (recognition) { try{ recognition.start(); } catch(e){} return; }
+        try {
+            const res = await apiCall('/chat', {text: text});
+            if(!res.ok) throw new Error("Erreur serveur");
+            const blob = await res.blob();
+            const audioUrl = URL.createObjectURL(blob);
+            const audio = new Audio(audioUrl);
 
-            recognition = new SpeechRecognition();
-            recognition.lang = "fr-FR";
-            recognition.continuous = true;
-            recognition.interimResults = true;
-
-            recognition.onresult = (event) => {
-                // SÉCURITÉ ANTI-ECHO : Si l'IA parle, on ignore le micro
-                if (isProcessing) return;
-
-                let interim = "";
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    if (event.results[i].isFinal) {
-                        let text = event.results[i][0].transcript;
-                        document.getElementById('chatFinal').textContent = text;
-                        sendToBrain(text); // ENVOI DIRECT (Pas de délai)
-                    } else {
-                        interim += event.results[i][0].transcript;
-                    }
-                }
-                document.getElementById('chatInterim').textContent = interim;
-            };
-            
-            recognition.onend = () => {
-                // On ne relance QUE si l'IA a fini de parler
-                if (!isProcessing && currentMode === 'chat') {
-                    try { recognition.start(); } catch(e){}
-                }
+            audio.onplay = () => {
+                if (recognition) recognition.abort();
+                avatar.className = "avatar speaking";
+                status.textContent = "🔊 Flow parle...";
+                status.style.color = "#0ea5e9";
             };
 
-            try { recognition.start(); } catch(e){}
-            document.getElementById('chatStatus').textContent = "Je vous écoute...";
-            document.getElementById('avatarDisplay').className = "avatar listening";
-        }
-
-        // ==========================================
-        // 5. CERVEAU (KILL SWITCH MICRO)
-        // ==========================================
-        async function sendToBrain(text) {
-            if(!text || text.trim() === "") return;
-
-            // KILL SWITCH : On coupe le micro IMMÉDIATEMENT
-            isProcessing = true;
-            if (recognition) recognition.abort(); 
-
-            // UI
-            const avatar = document.getElementById('avatarDisplay');
-            const status = document.getElementById('chatStatus');
-            avatar.className = "avatar thinking";
-            status.textContent = "🧠 Réflexion...";
-            document.getElementById('chatInterim').textContent = "";
-
-            try {
-                const res = await apiCall('/chat', {text: text});
-                if(!res.ok) throw new Error("Erreur serveur");
-
-                const blob = await res.blob();
-                const audioUrl = URL.createObjectURL(blob);
-                const audio = new Audio(audioUrl);
-
-                audio.onplay = () => {
-                    if (recognition) recognition.abort(); // Double sécurité
-                    avatar.className = "avatar speaking";
-                    status.textContent = "🔊 Flow parle...";
-                    status.style.color = "#0ea5e9";
-                };
-
-                audio.onended = () => {
-                    avatar.className = "avatar listening";
-                    status.textContent = "À vous...";
-                    status.style.color = "#64748b";
-                    
-                    // Petit délai avant de rouvrir le micro (évite d'entendre la fin du son)
-                    setTimeout(() => {
-                        isProcessing = false;
-                        if (currentMode === 'chat') startChat(); 
-                    }, 500); 
-                };
-
-                audio.play();
-
-            } catch(e) {
-                console.error(e);
+            audio.onended = () => {
                 avatar.className = "avatar listening";
-                status.textContent = "Erreur réseau";
-                isProcessing = false; 
-                startChat(); // On relance quand même en cas d'erreur
-            }
-        }
-
-        async function forceStop() {
-            await apiCall('/stop');
-            isProcessing = false;
-            stopChat();
+                status.textContent = "À vous...";
+                status.style.color = "#64748b";
+                setTimeout(() => {
+                    isProcessing = false;
+                    if (currentMode === 'chat') startChat(); 
+                }, 500); 
+            };
+            audio.play();
+        } catch(e) {
+            console.error(e);
+            avatar.className = "avatar listening";
+            status.textContent = "Erreur réseau";
+            isProcessing = false; 
             startChat();
         }
+    }
 
-        // ==========================================
-        // 6. PITCH ANALYZER (LOGIQUE)
-        // ==========================================
-        async function getMicrophone() {
-            try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch(e) { return null; }
-        }
+    async function forceStop() {
+        await apiCall('/stop');
+        isProcessing = false;
+        stopChat();
+        startChat();
+    }
 
-        async function togglePitch() {
-            if (!isPitchRecording) {
-                // START
-                stopChat(); // On coupe le chat
-                const stream = await getMicrophone();
-                if (!stream) { alert("Micro inaccessible."); return; }
+    // ==========================================
+    // 5. PITCH ANALYZER CORRIGÉ (C'est ici la clé)
+    // ==========================================
+    async function getMicrophone() {
+        try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch(e) { return null; }
+    }
 
-                mediaRecorder = new MediaRecorder(stream);
-                chunks = [];
-                mediaRecorder.ondataavailable = event => chunks.push(event.data);
+    async function togglePitch() {
+        // --- CAS 1 : DÉMARRAGE ---
+        if (!isPitchRecording) {
+            stopChat(); // Stop chat vocal
+            const stream = await getMicrophone();
+            if (!stream) { alert("Micro inaccessible (Vérifiez permissions ou HTTPS)."); return; }
+
+            mediaRecorder = new MediaRecorder(stream);
+            chunks = [];
+            
+            mediaRecorder.ondataavailable = event => chunks.push(event.data);
+            
+            // LOGIQUE QUAND L'ENREGISTREMENT S'ARRÊTE
+            mediaRecorder.onstop = async () => {
+                // Si vide (Annulation), on sort
+                if(chunks.length === 0) return;
+
+                const fd = new FormData(); 
+                fd.append("file", new Blob(chunks, { type: 'audio/webm' }), "pitch.webm");
                 
-                mediaRecorder.onstop = async () => {
-                    // Si vide (arrêt forcé), on sort
-                    if(chunks.length === 0) return;
-
-                    const fd = new FormData(); 
-                    fd.append("file", new Blob(chunks, { type: 'audio/webm' }), "pitch.webm");
-                    
-                    document.getElementById('btnPitchAction').textContent = "Analyse en cours...";
-                    
-                    try {
-                        const res = await apiCall('/analyze_audio', fd);
-                        const data = await res.json();
-                        
-                        if (data.status === 'error') { alert("Erreur: " + data.message); return; }
-
-                        // Remplissage Stats
-                        document.getElementById('statsGrid').style.display = 'grid';
-                        document.getElementById('statWPM').textContent = data.metrics.wpm;
-                        document.getElementById('statFillers').textContent = data.metrics.fillers;
-                        document.getElementById('statPauses').textContent = data.metrics.pauses;
-                        document.getElementById('pitchTranscript').textContent = data.metrics.transcript;
-                        document.getElementById('pitchTranscript').style.display = 'block';
-                        
-                        // Remplissage Rapport
-                        let rep; try { rep = JSON.parse(data.advice.replace(/```json/g,'').replace(/```/g,'').trim()); }
-                        catch(e) { rep = {note:"?", conseil: "Erreur parsing"}; }
-
-                        document.getElementById('reportCard').style.display = 'block';
-                        document.getElementById('rScore').textContent = rep.note || "N/A";
-                        document.getElementById('rHook').textContent = rep.accroche_probleme || "-";
-                        document.getElementById('rSol').textContent = rep.solution_cible || "-";
-                        document.getElementById('rBiz').textContent = rep.unicite_business || "-";
-                        document.getElementById('rCta').textContent = rep.cta_action || "-";
-                        document.getElementById('rTip').textContent = rep.conseil || "-";
-
-                        const missingBox = document.getElementById('missingBox');
-                        if (report.elements_manquants && !report.elements_manquants.includes("Aucun")) {
-                            missingBox.style.display = 'block';
-                            document.getElementById('rMissing').textContent = report.elements_manquants;
-                        } else { missingBox.style.display = 'none'; }
-
-                    } catch(e) { alert("Erreur analyse."); }
-                    
-                    document.getElementById('btnPitchAction').textContent = "🎙️ Recommencer";
-                    document.getElementById('btnPitchAction').className = "btn-action";
-                };
-
-                mediaRecorder.start();
-                isPitchRecording = true;
+                // UI : Chargement
+                document.getElementById('btnPitchAction').textContent = "⌛ Analyse en cours...";
+                document.getElementById('btnPitchAction').style.opacity = "0.7";
                 
-                document.getElementById('btnPitchAction').innerHTML = '🛑 Terminer';
-                document.getElementById('btnPitchAction').className = "btn-action btn-red";
-                startTime = Date.now();
-                timerInt = setInterval(()=> {
-                    const d = Math.floor((Date.now()-startTime)/1000);
-                    document.getElementById('timer').textContent = `${String(Math.floor(d/60)).padStart(2,'0')}:${String(d%60).padStart(2,'0')}`;
-                }, 1000);
+                try {
+                    const res = await apiCall('/analyze_audio', fd);
+                    const data = await res.json();
+                    
+                    if (data.status === 'error') { alert("Erreur: " + data.message); return; }
 
-            } else {
-                // STOP MANUEL
-                stopPitch(false);
-            }
+                    // STATS
+                    document.getElementById('statsGrid').style.display = 'grid';
+                    document.getElementById('statWPM').textContent = data.metrics.wpm;
+                    document.getElementById('statFillers').textContent = data.metrics.fillers;
+                    document.getElementById('statPauses').textContent = data.metrics.pauses;
+                    document.getElementById('pitchTranscript').textContent = data.metrics.transcript;
+                    document.getElementById('pitchTranscript').style.display = 'block';
+                    
+                    // RAPPORT
+                    let rep; 
+                    try { 
+                        // Nettoyage JSON agressif pour éviter les bugs
+                        let rawJson = data.advice.replace(/```json/g,'').replace(/```/g,'').trim();
+                        rep = JSON.parse(rawJson); 
+                    } catch(e) { 
+                        console.error("Erreur JSON", e);
+                        rep = {note:"?", conseil: "Erreur lecture réponse IA"}; 
+                    }
+
+                    document.getElementById('reportCard').style.display = 'block';
+                    document.getElementById('rScore').textContent = rep.note || "N/A";
+                    document.getElementById('rHook').textContent = rep.accroche_probleme || "-";
+                    document.getElementById('rSol').textContent = rep.solution_cible || "-";
+                    document.getElementById('rBiz').textContent = rep.unicite_business || "-";
+                    document.getElementById('rCta').textContent = rep.cta_action || "-";
+                    document.getElementById('rTip').textContent = rep.conseil || "-";
+
+                    // GESTION MANQUANTS (LA CORRECTION EST ICI : rep vs report)
+                    const missingBox = document.getElementById('missingBox');
+                    if (rep.elements_manquants && 
+                        !rep.elements_manquants.includes("Aucun") && 
+                        rep.elements_manquants.length > 2) {
+                        missingBox.style.display = 'block';
+                        document.getElementById('rMissing').textContent = rep.elements_manquants;
+                    } else { 
+                        missingBox.style.display = 'none'; 
+                    }
+
+                } catch(e) { 
+                    alert("Erreur analyse: " + e); 
+                    console.error(e);
+                }
+                
+                // FIN : Reset Bouton
+                document.getElementById('btnPitchAction').textContent = "🎙️ Recommencer";
+                document.getElementById('btnPitchAction').className = "btn-action";
+                document.getElementById('btnPitchAction').style.opacity = "1";
+                isPitchRecording = false; // Reset état
+                clearInterval(timerInt);
+            };
+
+            mediaRecorder.start();
+            isPitchRecording = true;
+            
+            // UI : Mode Enregistrement
+            document.getElementById('btnPitchAction').innerHTML = '🛑 Terminer et Analyser';
+            document.getElementById('btnPitchAction').className = "btn-action btn-red";
+            
+            startTime = Date.now();
+            timerInt = setInterval(()=> {
+                const d = Math.floor((Date.now()-startTime)/1000);
+                document.getElementById('timer').textContent = `${String(Math.floor(d/60)).padStart(2,'0')}:${String(d%60).padStart(2,'0')}`;
+            }, 1000);
+
+        } else {
+            // --- CAS 2 : ARRÊT MANUEL (CLICK SUR TERMINER) ---
+            // On change le texte tout de suite pour montrer que ça a marché
+            document.getElementById('btnPitchAction').textContent = "Envoi...";
+            
+            // On déclenche l'arrêt, le paramètre 'true' dit à stopPitch de NE PAS reset l'UI
+            stopPitch(true);
         }
-    </script>
+    }
+</script>
 </body>
 </html>
