@@ -4,26 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Flow - Ultimate Audio Fix</title>
-    <style>
-        /* --- 1. VARIABLES & THEME FLOW --- */
-        :root {
-            --bg-dark: #0f172a; 
-            --bg-card: #1e293b;
+   <style>
+        /* --- THEME GENERAL --- */
+        :root { 
+            --bg: #0f172a; 
+            --card: #1e293b; 
             --primary: #0ea5e9; 
-            --primary-dark: #0284c7;
-            --success: #10b981; 
-            --danger: #ef4444; 
-            --warning: #f59e0b; 
-            --text-main: #f8fafc;
-            --text-dim: #94a3b8;
+            --text: #f8fafc; 
+            --success: #10b981;
+            --danger: #ef4444;
         }
-
         * { box-sizing: border-box; }
-
         body { 
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
-            background-color: var(--bg-dark); 
-            color: var(--text-main); 
+            background: var(--bg); 
+            color: var(--text); 
+            font-family: 'Segoe UI', sans-serif; 
             margin: 0; 
             height: 100vh; 
             display: flex; 
@@ -31,292 +26,238 @@
             overflow: hidden; 
         }
 
-        /* --- 2. STRUCTURE --- */
+        /* --- LAYOUT --- */
         .full-screen { 
-            width: 100%; height: 100%; display: none; 
-            flex-direction: column; align-items: center; 
-            overflow-y: auto; padding: 20px; 
+            display: none; 
+            width: 100%; 
+            height: 100%; 
+            flex-direction: column; 
+            align-items: center; 
+            padding: 20px; 
+            overflow-y: auto; 
         }
         .full-screen.active { display: flex; }
-        #screen-config.active { justify-content: center; }
+        
+        /* --- VISUALISEUR AUDIO (Le plus important) --- */
+        .vad-wrapper {
+            width: 100%;
+            max-width: 300px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .vad-container { 
+            width: 100%; 
+            height: 20px; 
+            background: #334155; 
+            border-radius: 10px; 
+            position: relative; 
+            overflow: hidden; 
+            margin-top: 5px;
+        }
+        .vad-bar { 
+            height: 100%; 
+            background: var(--success); 
+            width: 0%; 
+            transition: width 0.05s linear; 
+        }
+        .vad-threshold { 
+            position: absolute; 
+            left: 10%; /* Sera ajusté par le JS */
+            top: 0; 
+            bottom: 0; 
+            width: 2px; 
+            background: var(--danger); 
+            z-index: 10; 
+        } 
 
-        /* --- 3. CONFIGURATION --- */
-        .brand-title { 
-            font-size: 2.5rem; font-weight: 800; 
-            background: linear-gradient(to right, #0ea5e9, #3b82f6); 
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
-            margin-bottom: 10px; 
+        /* --- ELEMENTS UI --- */
+        .avatar { 
+            width: 140px; 
+            height: 140px; 
+            border-radius: 50%; 
+            background: #1e293b; 
+            border: 4px solid #475569; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            font-size: 60px; 
+            margin-top: 30px; 
+            transition: 0.3s; 
         }
+        .avatar.speaking { 
+            border-color: var(--primary); 
+            box-shadow: 0 0 30px rgba(14,165,233,0.5); 
+            transform: scale(1.05);
+        }
+        .avatar.thinking {
+            border-color: #f59e0b;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse { 50% { opacity: 0.6; } }
+
+        .btn-action { 
+            padding: 15px 30px; 
+            border-radius: 50px; 
+            border: none; 
+            font-weight: bold; 
+            color: white; 
+            background: var(--primary); 
+            width: 100%; 
+            max-width: 300px; 
+            margin-top: 30px; 
+            cursor: pointer; 
+            font-size: 1.1rem;
+        }
+        .btn-red { background: var(--danger); }
+
+        .chat-text { 
+            text-align: center; 
+            margin-top: 20px; 
+            color: #cbd5e1; 
+            min-height: 40px; 
+            padding: 0 10px; 
+            font-style: italic;
+        }
+        
+        #statusText {
+            font-weight: bold;
+            margin-top: 10px;
+            height: 20px;
+            color: #64748b;
+        }
+
+        /* --- CONFIG FORM --- */
         .config-card { 
-            background: var(--bg-card); padding: 30px; border-radius: 24px; 
-            width: 100%; max-width: 450px; border: 1px solid #334155; 
-            box-shadow: 0 20px 40px rgba(0,0,0,0.4); 
+            background: var(--card); 
+            padding: 25px; 
+            border-radius: 20px; 
+            width: 100%; 
+            max-width: 400px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
         }
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 10px; color: var(--text-dim); font-weight: 600; }
-        
         input, select, textarea { 
-            width: 100%; padding: 14px; background: #0f172a; 
-            border: 1px solid #334155; border-radius: 12px; 
-            color: white; font-size: 1rem; outline: none; transition: 0.2s; 
+            width: 100%; padding: 12px; 
+            background: #0f172a; border: 1px solid #334155; 
+            color: white; border-radius: 8px; margin-bottom: 15px; 
+            display: block; font-family: inherit;
         }
-        input:focus, select:focus, textarea:focus { border-color: var(--primary); }
-        textarea { resize: none; height: 80px; }
+        label { color: #94a3b8; font-size: 0.9rem; margin-bottom: 5px; display: block; font-weight: bold;}
         
-        .char-selector { display: flex; gap: 15px; }
+        /* --- NAVIGATION --- */
+        nav { 
+            width: 100%; background: var(--card); padding: 10px; 
+            display: flex; justify-content: center; gap: 10px; 
+            margin-bottom: 10px;
+        }
+        .nav-btn { 
+            background: transparent; border: none; color: #94a3b8; 
+            font-size: 1rem; cursor: pointer; padding: 10px 20px; 
+            font-weight: 500;
+        }
+        .nav-btn.active { color: var(--primary); font-weight: bold; border-bottom: 2px solid var(--primary); }
+
+        /* --- SELECTION PERSONNAGE --- */
+        .char-selector { display: flex; gap: 15px; margin-bottom: 15px; }
         .char-opt { 
             flex: 1; background: #0f172a; border: 2px solid transparent; 
-            padding: 15px; border-radius: 12px; text-align: center; 
+            padding: 10px; border-radius: 12px; text-align: center; 
             cursor: pointer; transition: 0.2s; 
         }
         .char-opt.selected { border-color: var(--primary); background: rgba(14, 165, 233, 0.1); }
-        .char-emoji { font-size: 2.5rem; display: block; margin-bottom: 5px; }
+        .char-emoji { font-size: 2rem; display: block; margin-bottom: 5px; }
 
-        /* --- 4. NAVIGATION --- */
-        nav { 
-            width: 100%; background: var(--bg-card); padding: 15px; 
-            display: flex; justify-content: center; gap: 15px; 
-            border-bottom: 1px solid #334155; flex-shrink: 0; z-index: 10; 
-        }
-        .nav-btn { 
-            background: transparent; border: none; color: var(--text-dim); 
-            font-size: 1rem; cursor: pointer; padding: 10px 20px; 
-            border-radius: 12px; display: flex; align-items: center; gap: 8px; 
-            font-weight: 500; transition: 0.2s; 
-        }
-        .nav-btn.active { background: var(--primary); color: white; font-weight: bold; }
-        .btn-quit { margin-left: auto; color: var(--danger); }
-
-        .tab-content { 
-            display: none; flex-direction: column; align-items: center; 
-            width: 100%; max-width: 800px; margin: 0 auto; 
-            flex: 1; overflow-y: auto; padding-bottom: 50px; 
-        }
-        .tab-content.active { display: flex; }
-
-        /* --- 5. CHAT --- */
-        .avatar { 
-            width: 150px; height: 150px; border-radius: 50%; 
-            background: #1e293b; border: 4px solid #475569; 
-            display: flex; justify-content: center; align-items: center; 
-            font-size: 65px; margin-top: 30px; transition: 0.3s; 
-        }
-        .listening .avatar { border-color: var(--success); transform: scale(1.05); }
-        .speaking .avatar { border-color: var(--primary); box-shadow: 0 0 40px rgba(14, 165, 233, 0.5); }
-        .thinking .avatar { border-color: var(--warning); animation: pulse 0.5s infinite; }
-        
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-
-        .chat-transcript { 
-            text-align: center; font-size: 1.2rem; min-height: 80px; 
-            width: 100%; color: #e2e8f0; margin-top: 25px; padding: 0 20px; 
-        }
-
-        /* --- 6. PITCH & STATS --- */
-        .timer-display { 
-            font-size: 5rem; font-weight: 800; color: var(--primary); 
-            margin-top: 20px; font-variant-numeric: tabular-nums; 
-            text-shadow: 0 0 30px rgba(14, 165, 233, 0.2); 
-        }
-
-        .stats-grid { 
-            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; 
-            width: 100%; margin-top: 30px; display: none; 
-        }
-        .stat-card { 
-            background: #1e293b; padding: 15px; border-radius: 16px; 
-            text-align: center; border: 1px solid #334155; 
-        }
-        .stat-val { font-size: 1.8rem; font-weight: 800; color: white; }
-        .stat-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-top: 5px; }
-        .stat-good { color: var(--success); } 
-        .stat-bad { color: var(--danger); }
-
-        /* RAPPORT QQOQCP */
-        .report-panel { 
-            background: var(--bg-card); padding: 30px; border-radius: 24px; 
-            border-left: 6px solid var(--success); display: none; 
-            margin-top: 30px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.5); 
-        }
-        .report-header { 
-            display: flex; justify-content: space-between; align-items: center; 
-            margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid #334155; 
-        }
-        .report-title { font-weight: 800; color: #fff; font-size: 1.4rem; }
-        .score-badge { font-size: 3rem; color: var(--success); font-weight: 900; }
-
-        .report-item { margin-bottom: 18px; border-bottom: 1px solid #334155; padding-bottom: 12px; }
-        .report-item:last-child { border: none; }
-        
-        .report-key { 
-            color: var(--primary); font-size: 0.85rem; font-weight: 700; 
-            text-transform: uppercase; display: block; margin-bottom: 5px; 
-        }
-        .report-val { color: #f1f5f9; font-size: 1.05rem; line-height: 1.4; }
-
-        /* ALERTE ÉLÉMENTS MANQUANTS */
-        .missing-box { 
-            background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); 
-            padding: 15px; border-radius: 12px; margin-bottom: 20px; display: none;
-        }
-        .missing-title { 
-            color: var(--danger); font-weight: bold; text-transform: uppercase; 
-            font-size: 0.8rem; margin-bottom: 5px; display: block; 
-        }
-        .missing-content { color: #fca5a5; font-size: 0.95rem; }
-
-        .pitch-transcript-box { 
-            background: #0f172a; border: 1px solid #334155; border-radius: 16px; 
-            padding: 25px; width: 100%; color: #cbd5e1; margin-top: 30px; 
-            white-space: pre-wrap; display: none; 
-        }
-
-        /* --- 7. BOUTONS --- */
-        .btn-action { 
-            padding: 18px 40px; border-radius: 50px; border: none; 
-            font-size: 1.1rem; font-weight: bold; cursor: pointer; color: white; 
-            background: var(--primary); margin-top: 30px; width: 100%; max-width: 320px; 
-            display: flex; justify-content: center; align-items: center; gap: 12px; 
-            transition: transform 0.2s; 
-        }
-        .btn-action:hover { transform: translateY(-2px); }
-        .btn-red { background: var(--danger); }
-        
-        .recording-dot { width: 14px; height: 14px; background: white; border-radius: 50%; animation: blink 1s infinite; }
-        @keyframes blink { 50% { opacity: 0.2; } }
-
-        @media (max-width: 600px) { 
-            .nav-btn span { display: none; } 
-            .timer-display { font-size: 3.5rem; } 
-            .stats-grid { grid-template-columns: 1fr 1fr; } 
-            .stat-card:last-child { grid-column: span 2; } 
-        }
+        /* --- PITCH STATS --- */
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; width: 100%; margin-top: 20px; display: none; }
+        .stat-card { background: #1e293b; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #334155; }
+        .stat-val { font-size: 1.5rem; font-weight: bold; }
+        .stat-label { font-size: 0.7rem; color: #94a3b8; }
+        .report-panel { background: #1e293b; padding: 20px; margin-top: 20px; border-radius: 15px; display: none; text-align: left; }
+        .report-item { border-bottom: 1px solid #334155; padding: 10px 0; }
+        .report-key { color: var(--primary); font-size: 0.8rem; font-weight: bold; display: block; }
 
     </style>
 </head>
 <body>
 
-    <div id="screen-config" class="full-screen active">
-        <div class="brand-title">🌊 Flow</div>
-        <p style="color:#64748b; margin-top:-5px; margin-bottom:30px;" id="networkInfo">Chargement...</p>
+    <div id="screen-config" class="full-screen active" style="justify-content: center;">
+        <h1 style="color:#0ea5e9; margin-bottom: 20px;">🌊 Flow</h1>
+        <p style="color:#64748b; margin-top:-15px; margin-bottom:20px;" id="networkInfo">Prêt à démarrer</p>
         
         <div class="config-card">
-            <div class="form-group">
-                <label>Ton Coach</label>
-                <div class="char-selector">
-                    <div class="char-opt selected" onclick="selectChar('Lucas', 'homme', '🧑‍🎓', this)">
-                        <span class="char-emoji">🧑‍🎓</span> Lucas
-                    </div>
-                    <div class="char-opt" onclick="selectChar('Julie', 'femme', '👩‍💼', this)">
-                        <span class="char-emoji">👩‍💼</span> Julie
-                    </div>
+            <label>Ton Coach</label>
+            <div class="char-selector">
+                <div class="char-opt selected" onclick="selectChar('Lucas', 'homme', '🧑‍🎓', this)">
+                    <span class="char-emoji">🧑‍🎓</span> Lucas
+                </div>
+                <div class="char-opt" onclick="selectChar('Julie', 'femme', '👩‍💼', this)">
+                    <span class="char-emoji">👩‍💼</span> Julie
                 </div>
             </div>
 
-            <div class="form-group">
-                <label>Sujet du Pitch</label>
-                <textarea id="scenarioInput" placeholder="Ex: Pitch startup, Vente produit...">Entretien d'embauche.</textarea>
-            </div>
-
-            <div class="form-group">
-                <label>Personnalité de l'IA</label>
-                <select id="behaviorInput">
-                    <option>Amical et détendu (Sympa)</option>
-                    <option>Strict et professionnel (Challenge)</option>
-                    <option>Timide et hésitant (Drôle)</option>
-                    <option>Sarcastique et piquant (Fun)</option>
-                    <option>Coach militaire (Intensif)</option>
-                    <option>Philosophe calme (Zen)</option>
-                </select>
-            </div>
-
-            <button class="btn-action" style="width:100%" onclick="startSession()">
-                🚀 Lancer la session
-            </button>
+            <label>Scénario</label>
+            <textarea id="scenarioInput" rows="3">Entretien d'embauche pour un poste de développeur.</textarea>
+            
+            <label>Personnalité</label>
+            <select id="behaviorInput">
+                <option>Amical et détendu</option>
+                <option>Strict et professionnel</option>
+                <option>Curieux et bavard</option>
+            </select>
+            
+            <button class="btn-action" onclick="startSession()">🚀 Commencer</button>
         </div>
     </div>
 
     <div id="screen-app" class="full-screen">
         <nav>
-            <button class="nav-btn active" onclick="switchTab('chat')">💬 <span>Discussion</span></button>
-            <button class="nav-btn" onclick="switchTab('pitch')">🌊 <span>Pitch Analyzer</span></button>
-            <button class="nav-btn btn-quit" onclick="location.reload()">❌ <span>Quitter</span></button>
+            <button class="nav-btn active" onclick="switchTab('chat')">Discussion</button>
+            <button class="nav-btn" onclick="switchTab('pitch')">Pitch Analyzer</button>
+            <button class="nav-btn" onclick="location.reload()" style="color:var(--danger)">Quitter</button>
         </nav>
 
-        <div id="tab-chat" class="tab-content active">
+        <div id="tab-chat" style="width:100%; display:flex; flex-direction:column; align-items:center;">
             <div class="avatar" id="avatarDisplay">🧑‍🎓</div>
             
-            <div style="margin-top:15px; text-align:center;">
-                <div style="color:#64748b; font-size:0.9rem; font-weight:600;" id="chatStatus">Chargement...</div>
-                <div style="color:#334155; font-size:0.8rem; margin-top:5px;" id="volumeDebug">Vol: 0</div>
+            <div id="statusText">Initialisation...</div>
+
+            <div class="vad-wrapper">
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:#64748b;">
+                    <span>Micro</span>
+                    <span id="volValue">0</span>
+                </div>
+                <div class="vad-container">
+                    <div class="vad-threshold" id="visualThreshold"></div> 
+                    <div class="vad-bar" id="vadBar"></div>
+                </div>
+                <div style="font-size: 0.75rem; color: #475569; margin-top: 5px;">
+                    Si la barre dépasse la ligne rouge, j'enregistre.
+                </div>
             </div>
 
-            <div class="chat-transcript">
-                <span id="chatFinal" style="color:white; font-weight:600;"></span>
-                <span id="chatInterim" style="color:#64748b; font-style:italic;"></span>
-            </div>
-
-            <button class="btn-action btn-red" onclick="forceStop()">
-                🤫 STOP (Silence)
-            </button>
+            <div class="chat-text" id="chatFinal">...</div>
+            
+            <button class="btn-action btn-red" onclick="forceStop()">🛑 STOP URGENCE</button>
         </div>
 
-        <div id="tab-pitch" class="tab-content">
-            <div class="timer-display" id="timer">00:00</div>
-
+        <div id="tab-pitch" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <div style="font-size:4rem; font-weight:bold; color:var(--primary); margin-top:20px;" id="timer">00:00</div>
+            
             <div class="stats-grid" id="statsGrid">
-                <div class="stat-card">
-                    <div class="stat-val" id="statWPM">--</div>
-                    <div class="stat-label">Mots / Min</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-val" id="statFillers">--</div>
-                    <div class="stat-label">"Euh"</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-val" id="statPauses">--</div>
-                    <div class="stat-label">Pauses > 2s</div>
-                </div>
+                <div class="stat-card"><div class="stat-val" id="statWPM">--</div><div class="stat-label">WPM</div></div>
+                <div class="stat-card"><div class="stat-val" id="statFillers">--</div><div class="stat-label">EUH</div></div>
+                <div class="stat-card"><div class="stat-val" id="statPauses">--</div><div class="stat-label">PAUSES</div></div>
             </div>
-
-            <div class="pitch-transcript-box" id="pitchTranscript"></div>
 
             <div id="reportCard" class="report-panel">
-                <div class="report-header">
-                    <span class="report-title">SCORE STRUCTURE</span>
-                    <span class="score-badge" id="rScore">--</span>
-                </div>
-                
-                <div class="missing-box" id="missingBox">
-                    <span class="missing-title">⚠️ Éléments Manquants (QQOQCP)</span>
-                    <span class="missing-content" id="rMissing">...</span>
-                </div>
-
-                <div class="report-item">
-                    <span class="report-key">1. Problème & Accroche (Why)</span>
-                    <span class="report-val" id="rHook">...</span>
-                </div>
-                <div class="report-item">
-                    <span class="report-key">2. Solution & Cible (What/Who)</span>
-                    <span class="report-val" id="rSol">...</span>
-                </div>
-                <div class="report-item">
-                    <span class="report-key">3. Unicité & Business (Why You)</span>
-                    <span class="report-val" id="rBiz">...</span>
-                </div>
-                <div class="report-item">
-                    <span class="report-key">4. Appel à l'action (CTA)</span>
-                    <span class="report-val" id="rCta">...</span>
-                </div>
-                <div class="report-item">
-                    <span class="report-key">🚀 Conseil Prioritaire</span>
-                    <span class="report-val" id="rTip" style="color:#fcd34d; font-weight:bold;">...</span>
-                </div>
+                <div style="font-size:1.5rem; font-weight:bold; color:white; margin-bottom:10px;">Note: <span id="rScore" style="color:var(--success)">--</span></div>
+                <div class="report-item"><span class="report-key">Accroche</span><span id="rHook">...</span></div>
+                <div class="report-item"><span class="report-key">Solution</span><span id="rSol">...</span></div>
+                <div class="report-item"><span class="report-key">Conseil</span><span id="rTip" style="color:#fcd34d">...</span></div>
+                <div id="missingBox" style="margin-top:10px; color:var(--danger); font-size:0.9rem; display:none;"></div>
             </div>
 
-            <button id="btnPitchAction" class="btn-action" onclick="togglePitch()">
-                🎙️ Enregistrer
-            </button>
+            <button id="btnPitchAction" class="btn-action" onclick="togglePitch()">🎙️ Enregistrer Pitch</button>
         </div>
     </div>
 
@@ -324,289 +265,354 @@
     // ==========================================
     // 1. CONFIGURATION RÉSEAU
     // ==========================================
+   // ============================================
+    // 1. REGLAGES & CONSTANTES
+    // ============================================
     const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-    
-    // --- TON URL NGROK ---
+    // --- IMPORTANT : METS TON URL NGROK ICI ---
     const PROD_API = "https://oscillometric-unexterminated-dionne.ngrok-free.dev"; 
+    const BASE_URL = isLocal ? "http://127.0.0.1:8001" : PROD_API;
     
-    let BASE_URL = isLocal ? "http://127.0.0.1:8001" : PROD_API;
+    // SENSIBILITÉ MICRO (0 à 100)
+    // 10 = Standard. Baisse à 5 si ça ne détecte pas ta voix. Monte à 15 si le vent déclenche.
+    const THRESHOLD = 10; 
     
-    document.getElementById('networkInfo').textContent = isLocal ? "Mode Local" : "Mode Production";
+    // Durée de silence pour valider la fin de phrase (ms)
+    const SILENCE_DURATION = 1500; 
 
+    // Mise à jour visuelle immédiate du seuil rouge
+    // On multiplie par 2 car l'affichage de la barre verte est amplifié x2
+    const visualThresholdPos = Math.min(100, THRESHOLD * 2);
+    document.getElementById('visualThreshold').style.left = visualThresholdPos + "%";
+
+    // ============================================
+    // 2. VARIABLES GLOBALES
+    // ============================================
+    let audioContext, analyser, microphone, recorder;
+    let globalStream; // Pour garder le micro ouvert
+    let audioChunks = [];
+    
+    // États du Chat
+    let isRecording = false; // Le recorder tourne-t-il ?
+    let isSpeaking = false;  // L'utilisateur parle-t-il (volume > seuil) ?
+    let silenceTimer = null; // Timer pour détecter la fin de phrase
+    let currentAudioPlay = null; // L'audio de la réponse IA
+
+    // États du Pitch
+    let isPitchRecording = false;
+    let pitchRecorder, pitchChunks=[], timerInt, startTime;
+
+    // Configuration par défaut
+    let selectedChar = 'Lucas'; 
+    let selectedGender = 'homme';
+    let selectedEmoji = '🧑‍🎓';
+
+    // ============================================
+    // 3. FONCTIONS API GÉNÉRIQUES
+    // ============================================
     async function apiCall(endpoint, body) {
-        const headers = { 'ngrok-skip-browser-warning': 'true' };
-        if(!(body instanceof FormData)) headers['Content-Type'] = 'application/json';
-        
         return fetch(`${BASE_URL}${endpoint}`, {
             method: 'POST',
-            headers: headers,
-            body: body instanceof FormData ? body : JSON.stringify(body)
+            body: body instanceof FormData ? body : JSON.stringify(body),
+            headers: body instanceof FormData ? 
+                { 'ngrok-skip-browser-warning': 'true' } : 
+                { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }
         });
     }
 
-    // ==========================================
-    // 2. ÉTAT GLOBAL
-    // ==========================================
-    let currentMode = 'config';
-    let selectedChar = 'Lucas'; 
-    let selectedGender = 'homme'; 
-    let selectedEmoji = '🧑‍🎓';
-    
-    // Variables CHAT (Nouvelle approche Audio)
-    let isProcessing = false; 
-    let currentAudioResponse = null; 
-    let chatRecorder = null;
-    let chatChunks = [];
-    let audioContext = null;
-    let analyser = null;
-    let microphoneStream = null;
-    let silenceTimer = null;
-    let isSpeaking = false;
-
-    // Variables PITCH
-    let isPitchRecording = false; 
-    let pitchRecorder, pitchChunks=[], timerInt, startTime;
-
-    // ==========================================
-    // 3. FONCTIONS UTILITAIRES
-    // ==========================================
     function selectChar(n,g,e,el){ 
-        selectedChar=n;
-        selectedGender=g;
-        selectedEmoji=e; 
+        selectedChar=n; selectedGender=g; selectedEmoji=e; 
         document.querySelectorAll('.char-opt').forEach(x=>x.classList.remove('selected')); 
         el.classList.add('selected'); 
     }
-    
-    function resetStates() {
-        if(currentAudioResponse) { currentAudioResponse.pause(); currentAudioResponse = null; }
-        stopChatRecording();
-        isProcessing = false;
-        
-        // Stop Pitch
-        if(pitchRecorder && pitchRecorder.state !== 'inactive') pitchRecorder.stop();
-        clearInterval(timerInt);
-        isPitchRecording = false;
-        
-        document.getElementById('timer').textContent = "00:00";
-    }
 
-    function switchTab(tabName) {
-        resetStates();
-        
-        currentMode = tabName;
-        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        
-        const btns = document.querySelectorAll('.nav-btn');
-        if(tabName === 'chat') btns[0].classList.add('active');
-        if(tabName === 'pitch') btns[1].classList.add('active');
-        document.getElementById(`tab-${tabName}`).classList.add('active');
-
-        // Init AudioContext au clic (Requis par les navigateurs)
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-
-        if (tabName === 'chat') startChatListening();
-    }
-
+    // ============================================
+    // 4. INITIALISATION DE LA SESSION
+    // ============================================
     async function startSession() {
         try {
+            document.getElementById('networkInfo').textContent = "Configuration...";
+            
             await apiCall('/config', {
-                character: selectedChar,
+                character: selectedChar, 
                 gender: selectedGender,
                 scenario: document.getElementById('scenarioInput').value,
                 behavior: document.getElementById('behaviorInput').value
             });
+            
+            // Changement d'écran
             document.getElementById('screen-config').classList.remove('active');
             document.getElementById('screen-app').classList.add('active');
             document.getElementById('avatarDisplay').textContent = selectedEmoji;
-            switchTab('chat');
-        } catch (e) { alert("ERREUR CONNEXION : " + e); }
-    }
-
-    // ==========================================
-    // 4. CHAT AUDIO (Compatible Partout + FIX SENSIBILITÉ)
-    // ==========================================
-    async function startChatListening() {
-        if (isProcessing || currentMode !== 'chat') return;
-
-        try {
-            // Demande accès micro
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            microphoneStream = stream;
-
-            // 1. Enregistreur - NOTE: On lance avec 500ms pour forcer la création de blobs
-            chatRecorder = new MediaRecorder(stream);
-            chatChunks = [];
-            chatRecorder.ondataavailable = e => {
-                if(e.data.size > 0) chatChunks.push(e.data);
-            };
             
-            chatRecorder.onstop = async () => {
-                // Si arrêt normal (pas reset) et des données
-                if(chatChunks.length > 0 && !isProcessing) {
-                    const blob = new Blob(chatChunks, { type: 'audio/webm' });
-                    // On n'envoie que si le blob fait une taille décente (> 1ko)
-                    if(blob.size > 1000) {
-                        sendAudioToBrain(blob);
-                    } else {
-                        console.log("Audio trop court ignoré");
-                        if (currentMode === 'chat') startChatListening(); // Relance si ignoré
-                    }
-                }
-            };
+            // Démarrage du moteur audio immédiatement
+            initAudio();
 
-            // 2. Détecteur de Silence (VAD)
-            if(audioContext.state === 'suspended') await audioContext.resume();
-            const source = audioContext.createMediaStreamSource(stream);
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = 512;
-            source.connect(analyser);
-            
-            // IMPORTANT : On lance avec timeslice pour avoir des chunks réguliers
-            chatRecorder.start(500); 
-            
-            document.getElementById('chatStatus').textContent = "Je vous écoute (Parlez)...";
-            document.getElementById('avatarDisplay').className = "avatar listening";
-            
-            detectSilence(); // Lance la boucle
-
-        } catch (e) {
-            console.error("Erreur Micro", e);
-            document.getElementById('chatStatus').textContent = "Erreur Micro (Vérifiez HTTPS)";
+        } catch(e) {
+            alert("Erreur connexion serveur : " + e + "\nVérifiez que le serveur Python tourne.");
         }
     }
 
-    function detectSilence() {
-        if (!chatRecorder || chatRecorder.state !== 'running') return;
+    function switchTab(tab) {
+        // Nettoyage avant changement d'onglet
+        if(isRecording) forceStopRecording(); 
+        if(isPitchRecording) togglePitch(); // Arrête proprement le pitch
+        if(currentAudioPlay) { currentAudioPlay.pause(); currentAudioPlay = null; }
+
+        // Gestion UI des onglets
+        document.getElementById('tab-chat').style.display = 'none';
+        document.getElementById('tab-pitch').style.display = 'none';
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        
+        if (tab === 'chat') {
+            document.getElementById('tab-chat').style.display = 'flex';
+            document.querySelectorAll('.nav-btn')[0].classList.add('active');
+            // Relance l'écoute Chat
+            startListening(); 
+        } else {
+            document.getElementById('tab-pitch').style.display = 'flex';
+            document.querySelectorAll('.nav-btn')[1].classList.add('active');
+            // Le chat ne doit pas écouter en arrière-plan
+            if(recorder && recorder.state !== 'inactive') recorder.stop();
+            isRecording = false;
+        }
+    }
+
+    // ============================================
+    // 5. MOTEUR AUDIO CHAT (CORE)
+    // ============================================
+    async function initAudio() {
+        try {
+            // Demande l'accès au micro une bonne fois pour toutes
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            globalStream = stream; 
+            
+            // Setup Audio Context pour l'analyse visuelle (VAD)
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 512; // Résolution de l'analyse
+            
+            microphone = audioContext.createMediaStreamSource(stream);
+            microphone.connect(analyser);
+
+            updateStatus("Micro connecté.", "#64748b");
+            
+            // Lance l'écoute (Recorder)
+            startListening();
+            
+            // Lance l'analyse visuelle (Boucle infinie)
+            analyzeVolume(); 
+
+        } catch (e) {
+            alert("ERREUR MICRO : " + e.message + "\n\n1. Vérifiez que vous êtes en HTTPS ou localhost.\n2. Autorisez le micro dans le navigateur.");
+        }
+    }
+
+    function startListening() {
+        // Sécurité : ne pas lancer deux fois, ni si on est pas sur l'onglet chat
+        if (isRecording) return;
+        if (!globalStream) return;
+        if (document.getElementById('tab-chat').style.display === 'none') return;
+        
+        // Création d'un nouveau MediaRecorder
+        // On laisse le navigateur choisir le meilleur format (souvent webm/opus)
+        recorder = new MediaRecorder(globalStream);
+        audioChunks = [];
+
+        recorder.ondataavailable = e => {
+            if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        // GESTION DE L'ARRÊT (C'est ici qu'on décide d'envoyer ou pas)
+        recorder.onstop = () => {
+            // On ne traite que si on a des données ET qu'on est toujours en mode Chat
+            if (audioChunks.length > 0 && document.getElementById('tab-chat').style.display !== 'none') {
+                const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                
+                // FILTRE ANTI-BRUIT : Si le fichier fait moins de 2ko, c'est probablement juste du souffle
+                if (blob.size > 2000) { 
+                    sendToBrain(blob);
+                } else {
+                    console.log("Audio trop court (bruit), ignoré.");
+                    updateStatus("Ignoré (bruit ambiant)", "#64748b");
+                    // On relance l'écoute rapidement
+                    setTimeout(() => {
+                        if (!currentAudioPlay) startListening(); 
+                    }, 500);
+                }
+            } else {
+                // Si arrêt bizarre, on relance si besoin
+                if (!currentAudioPlay && document.getElementById('tab-chat').style.display !== 'none') {
+                    startListening();
+                }
+            }
+        };
+
+        recorder.start();
+        isRecording = true;
+        
+        updateStatus("🎤 Je vous écoute...", "#94a3b8");
+        document.getElementById('avatarDisplay').className = "avatar";
+        document.getElementById('avatarDisplay').style.borderColor = "#475569";
+    }
+
+    function analyzeVolume() {
+        // Cette fonction tourne en boucle (environ 60 fois par seconde)
+        if(!analyser) return;
 
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         analyser.getByteFrequencyData(dataArray);
 
-        // Calcul volume moyen
+        // 1. Calcul du volume moyen actuel
         let sum = 0;
         for(let i = 0; i < bufferLength; i++) sum += dataArray[i];
-        let average = sum / bufferLength;
+        let average = sum / bufferLength; 
 
-        // DEBUG VISUEL : Affiche le volume pour que tu puisses régler le seuil
-        document.getElementById('volumeDebug').textContent = "Vol: " + Math.round(average);
+        // 2. Mise à jour de la barre verte (UI)
+        const visualVal = Math.min(100, average * 2); // Amplification x2 pour visibilité
+        document.getElementById('vadBar').style.width = visualVal + "%";
+        document.getElementById('volValue').textContent = Math.round(average);
 
-        // SEUIL RÉDUIT À 5 (Très sensible)
-        const THRESHOLD = 5; 
-
-        if (average > THRESHOLD) {
-            // TU PARLES
-            isSpeaking = true;
-            document.getElementById('chatStatus').textContent = "🔊 Je vous entends...";
-            document.getElementById('chatStatus').style.color = "#10b981";
-            document.getElementById('avatarDisplay').style.borderColor = "#10b981";
-            clearTimeout(silenceTimer);
-        } else {
-            // SILENCE
-            if (isSpeaking) {
-                isSpeaking = false;
-                document.getElementById('chatStatus').textContent = "⏳ Fin détectée... Envoi dans 1.2s";
-                document.getElementById('chatStatus').style.color = "#f59e0b";
-                document.getElementById('avatarDisplay').style.borderColor = "#f59e0b";
-                
-                // Silence de 1.2s = Fin de phrase
-                silenceTimer = setTimeout(() => {
-                    document.getElementById('chatStatus').textContent = "🚀 Envoi...";
-                    stopChatRecording(); 
-                }, 1200); 
+        // 3. Logique VAD (Voice Activity Detection)
+        // On ne fait ça que si l'onglet Chat est actif et qu'on n'est pas en train d'écouter une réponse
+        if (document.getElementById('tab-chat').style.display !== 'none' && !currentAudioPlay) {
+            
+            if (average > THRESHOLD) {
+                // --- CAS A : L'utilisateur parle ---
+                if (!isSpeaking) {
+                    isSpeaking = true;
+                    updateStatus("🔊 Voix détectée !", "#10b981"); // Vert
+                    document.getElementById('avatarDisplay').style.borderColor = "#10b981";
+                }
+                // Tant qu'on parle, on annule tout timer de silence prévu
+                if (silenceTimer) {
+                    clearTimeout(silenceTimer);
+                    silenceTimer = null;
+                }
+            
+            } else if (isSpeaking) {
+                // --- CAS B : Silence après avoir parlé ---
+                if (!silenceTimer) {
+                    updateStatus("⏳ Fin de phrase ?", "#f59e0b"); // Orange
+                    document.getElementById('avatarDisplay').style.borderColor = "#f59e0b";
+                    
+                    // On lance le compte à rebours avant envoi
+                    silenceTimer = setTimeout(() => {
+                        commitRecording(); // TEMPS ÉCOULÉ -> ON ENVOIE
+                    }, SILENCE_DURATION);
+                }
             }
         }
-        requestAnimationFrame(detectSilence);
+
+        // Relance la boucle au prochain rafraîchissement d'écran
+        requestAnimationFrame(analyzeVolume);
     }
 
-    function stopChatRecording() {
-        if (chatRecorder && chatRecorder.state !== 'inactive') {
-            chatRecorder.stop();
+    function commitRecording() {
+        // Cette fonction est appelée quand le silence est confirmé
+        isSpeaking = false;
+        
+        if (isRecording) {
+            isRecording = false;
+            updateStatus("🚀 Envoi en cours...", "#0ea5e9"); // Bleu
+            // Stopper le recorder déclenche automatiquement l'événement 'onstop' défini plus haut
+            recorder.stop(); 
         }
-        // Éteindre le micro visuellement
-        if (microphoneStream) {
-            microphoneStream.getTracks().forEach(track => track.stop());
+        
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+    }
+    
+    function forceStopRecording() {
+        if (recorder && recorder.state !== 'inactive') {
+            recorder.stop();
         }
+        isRecording = false;
+        isSpeaking = false;
         clearTimeout(silenceTimer);
     }
 
-    async function sendAudioToBrain(audioBlob) {
-        isProcessing = true; // Bloque le micro
-        
-        const avatar = document.getElementById('avatarDisplay');
-        const status = document.getElementById('chatStatus');
-        avatar.className = "avatar thinking";
-        avatar.style.borderColor = "#f59e0b"; // Couleur réflexion
-        status.textContent = "🧠 Réflexion...";
-        status.style.color = "#f59e0b";
+    // ============================================
+    // 6. ENVOI ET RECEPTION (Backend Gemini)
+    // ============================================
+    async function sendToBrain(blob) {
+        // UI : Mode Réflexion
+        document.getElementById('avatarDisplay').className = "avatar thinking";
+        document.getElementById('avatarDisplay').style.borderColor = "#f59e0b";
+        updateStatus("🧠 Gemini réfléchit...", "#f59e0b");
         
         const fd = new FormData();
-        fd.append("audio_file", audioBlob, "user_input.webm");
+        fd.append("audio_file", blob, "user_input.webm");
 
         try {
-            // ENVOI A TON NOUVEAU ENDPOINT
+            // Appel API
             const res = await apiCall('/chat_audio', fd);
             
-            if(!res.ok) throw new Error("Erreur serveur");
-            const blob = await res.blob();
-            const audioUrl = URL.createObjectURL(blob);
+            if (!res.ok) {
+                // Gestion des erreurs HTTP (ex: 400 Bad Request)
+                const errText = await res.text();
+                throw new Error("Erreur serveur : " + errText);
+            }
             
-            currentAudioResponse = new Audio(audioUrl);
-
-            currentAudioResponse.onplay = () => {
-                avatar.className = "avatar speaking";
-                avatar.style.borderColor = "#0ea5e9";
-                status.textContent = "🔊 Flow parle...";
-                status.style.color = "#0ea5e9";
-                document.getElementById('chatFinal').textContent = "(Réponse audio reçue)";
-            };
-
-            currentAudioResponse.onended = () => {
-                currentAudioResponse = null;
-                isProcessing = false;
-                avatar.style.borderColor = "#475569"; // Reset couleur
-                if (currentMode === 'chat') startChatListening(); // Relance auto
+            // Réception de l'audio de réponse
+            const audioBlob = await res.blob();
+            const url = URL.createObjectURL(audioBlob);
+            
+            // Lecture
+            currentAudioPlay = new Audio(url);
+            
+            currentAudioPlay.onplay = () => {
+                document.getElementById('avatarDisplay').className = "avatar speaking";
+                document.getElementById('avatarDisplay').style.borderColor = "#0ea5e9";
+                updateStatus("🔊 Flow parle...", "#0ea5e9");
+                document.getElementById('chatFinal').textContent = "(Lecture audio en cours...)";
             };
             
-            currentAudioResponse.play();
+            currentAudioPlay.onended = () => {
+                document.getElementById('avatarDisplay').className = "avatar";
+                currentAudioPlay = null;
+                // --- BOUCLE : ON RELANCE L'ECOUTE AUTOMATIQUEMENT ---
+                if (document.getElementById('tab-chat').style.display !== 'none') {
+                    startListening(); 
+                }
+            };
+            
+            currentAudioPlay.play();
 
-        } catch(e) {
+        } catch (e) {
             console.error(e);
-            avatar.className = "avatar listening";
-            status.textContent = "Erreur réseau";
-            isProcessing = false; 
-            startChatListening();
+            updateStatus("Erreur : " + e.message, "#ef4444");
+            // En cas d'erreur, on attend 2s et on relance l'écoute pour ne pas bloquer l'app
+            setTimeout(() => { 
+                if (document.getElementById('tab-chat').style.display !== 'none') startListening(); 
+            }, 2000);
         }
     }
 
-    async function forceStop() {
-        apiCall('/stop');
-        resetStates();
-        setTimeout(() => { if(currentMode === 'chat') startChatListening(); }, 500);
-    }
-
-    // ==========================================
-    // 5. PITCH ANALYZER
-    // ==========================================
+    // ============================================
+    // 7. FONCTION DE PITCH (MANUEL)
+    // ============================================
     async function togglePitch() {
         if (!isPitchRecording) {
-            // START
-            resetStates(); 
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // --- DEMARRAGE ENREGISTREMENT PITCH ---
             
+            // On s'assure d'avoir un stream frais
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             pitchRecorder = new MediaRecorder(stream);
             pitchChunks = [];
+            
             pitchRecorder.ondataavailable = e => pitchChunks.push(e.data);
             
             pitchRecorder.onstop = async () => {
+                // LOGIQUE FIN ENREGISTREMENT
                 if(pitchChunks.length === 0) return;
+                
                 const fd = new FormData(); 
                 fd.append("file", new Blob(pitchChunks, { type: 'audio/webm' }), "pitch.webm");
                 
-                document.getElementById('btnPitchAction').textContent = "⌛ Analyse en cours...";
+                document.getElementById('btnPitchAction').textContent = "⌛ Analyse intelligente...";
+                document.getElementById('btnPitchAction').style.background = "#f59e0b"; // Orange
                 
                 try {
                     const res = await apiCall('/analyze_audio', fd);
@@ -614,40 +620,51 @@
                     
                     if(data.status === 'error') throw new Error(data.message);
 
+                    // 1. Affichage Stats
                     document.getElementById('statsGrid').style.display = 'grid';
                     document.getElementById('statWPM').textContent = data.metrics.wpm;
                     document.getElementById('statFillers').textContent = data.metrics.fillers;
                     document.getElementById('statPauses').textContent = data.metrics.pauses;
-                    document.getElementById('pitchTranscript').textContent = data.metrics.transcript;
-                    document.getElementById('pitchTranscript').style.display = 'block';
                     
-                    let rep; try { rep = JSON.parse(data.advice.replace(/```json/g,'').replace(/```/g,'').trim()); } catch(e) { rep = {}; }
-
+                    // 2. Parsing Rapport Gemini
+                    // On nettoie le markdown si présent (```json ... ```)
+                    let cleanJson = data.advice.replace(/```json/g,'').replace(/```/g,'').trim();
+                    let rep = JSON.parse(cleanJson);
+                    
+                    // 3. Affichage Rapport
                     document.getElementById('reportCard').style.display = 'block';
-                    document.getElementById('rScore').textContent = rep.note || "-";
-                    document.getElementById('rHook').textContent = rep.accroche_probleme || "-";
-                    document.getElementById('rSol').textContent = rep.solution_cible || "-";
-                    document.getElementById('rBiz').textContent = rep.unicite_business || "-";
-                    document.getElementById('rCta').textContent = rep.cta_action || "-";
-                    document.getElementById('rTip').textContent = rep.conseil || "-";
-                    
-                    const missingBox = document.getElementById('missingBox');
-                    if (rep.elements_manquants && !rep.elements_manquants.includes("Aucun") && rep.elements_manquants.length > 2) {
-                        missingBox.style.display = 'block';
-                        document.getElementById('rMissing').textContent = rep.elements_manquants;
-                    } else { missingBox.style.display = 'none'; }
+                    document.getElementById('rScore').textContent = rep.note;
+                    document.getElementById('rHook').textContent = rep.accroche_probleme;
+                    document.getElementById('rSol').textContent = rep.solution_cible;
+                    document.getElementById('rTip').textContent = rep.conseil;
 
-                } catch(e) { alert("Erreur: " + e); }
+                    // Affichage des éléments manquants seulement s'il y en a
+                    const missingBox = document.getElementById('missingBox');
+                    if (rep.elements_manquants && rep.elements_manquants.length > 3 && !rep.elements_manquants.includes("Aucun")) {
+                        missingBox.style.display = 'block';
+                        missingBox.textContent = "⚠️ Manquant : " + rep.elements_manquants;
+                    } else {
+                        missingBox.style.display = 'none';
+                    }
+
+                } catch(e) { 
+                    alert("Erreur Analyse Pitch : " + e); 
+                }
                 
-                document.getElementById('btnPitchAction').textContent = "🎙️ Recommencer";
+                // Reset Bouton
+                document.getElementById('btnPitchAction').textContent = "🎙️ Recommencer un Pitch";
                 document.getElementById('btnPitchAction').className = "btn-action";
+                document.getElementById('btnPitchAction').style.background = ""; // Reset couleur
             };
 
             pitchRecorder.start();
             isPitchRecording = true;
-            document.getElementById('btnPitchAction').innerHTML = '🛑 Terminer';
+            
+            // UI Enregistrement
+            document.getElementById('btnPitchAction').textContent = "🛑 Terminer l'enregistrement";
             document.getElementById('btnPitchAction').className = "btn-action btn-red";
             
+            // Timer
             startTime = Date.now();
             timerInt = setInterval(()=> {
                 const d = Math.floor((Date.now()-startTime)/1000);
@@ -655,12 +672,34 @@
             }, 1000);
 
         } else {
-            // STOP
+            // --- ARRET ENREGISTREMENT PITCH ---
             clearInterval(timerInt);
             isPitchRecording = false;
-            document.getElementById('btnPitchAction').textContent = "Envoi...";
+            document.getElementById('btnPitchAction').textContent = "Envoi au cloud...";
             if(pitchRecorder) pitchRecorder.stop();
         }
+    }
+
+    // ============================================
+    // 8. BOUTON STOP URGENCE
+    // ============================================
+    function forceStop() {
+        // Arrêt immédiat de tout
+        if (recorder && recorder.state !== "inactive") recorder.stop();
+        if (pitchRecorder && pitchRecorder.state !== "inactive") pitchRecorder.stop();
+        if (currentAudioPlay) { currentAudioPlay.pause(); currentAudioPlay = null; }
+        
+        // Appel API pour reset côté serveur
+        apiCall('/stop');
+        
+        // Rechargement page pour un état propre
+        location.reload();
+    }
+
+    function updateStatus(text, color) {
+        const el = document.getElementById('statusText');
+        el.textContent = text;
+        if(color) el.style.color = color;
     }
 </script>
 </body>
