@@ -464,8 +464,7 @@
             document.getElementById('chatStatus').textContent = "Erreur Micro (Vérifiez HTTPS)";
         }
     }
-
-    function detectSilence() {
+function detectSilence() {
         if (!chatRecorder || chatRecorder.state !== 'running') return;
 
         const bufferLength = analyser.frequencyBinCount;
@@ -477,28 +476,40 @@
         for(let i = 0; i < bufferLength; i++) sum += dataArray[i];
         let average = sum / bufferLength;
 
-        const THRESHOLD = 12; // Seuil de sensibilité (ajuster si besoin)
+        // Seuil ajusté (si ton micro capte trop de bruit de fond, augmente à 15 ou 20)
+        const THRESHOLD = 12; 
+
+        const statusEl = document.getElementById('chatStatus');
+        const avatarEl = document.getElementById('avatarDisplay');
 
         if (average > THRESHOLD) {
+            // TU PARLES
             isSpeaking = true;
-            document.getElementById('chatStatus').textContent = "Je vous entends...";
-            document.getElementById('chatStatus').style.color = "#10b981";
+            statusEl.textContent = "🔊 Je vous entends...";
+            statusEl.style.color = "#10b981"; // Vert
+            statusEl.style.fontWeight = "bold";
+            avatarEl.style.borderColor = "#10b981"; // Bordure verte
+            
             clearTimeout(silenceTimer);
         } else {
+            // SILENCE
             if (isSpeaking) {
+                // Le silence vient de commencer
                 isSpeaking = false;
-                document.getElementById('chatStatus').textContent = "Fin de phrase ?";
-                document.getElementById('chatStatus').style.color = "#64748b";
                 
-                // Silence de 1.2s = Fin de phrase
+                statusEl.textContent = "⏳ Fin détectée... Envoi dans 1s";
+                statusEl.style.color = "#f59e0b"; // Orange
+                avatarEl.style.borderColor = "#f59e0b"; // Bordure orange
+                
+                // On lance le chrono
                 silenceTimer = setTimeout(() => {
+                    statusEl.textContent = "🚀 Envoi en cours...";
                     stopChatRecording(); 
-                }, 1200); 
+                }, 1200); // 1.2 secondes de délai
             }
         }
         requestAnimationFrame(detectSilence);
     }
-
     function stopChatRecording() {
         if (chatRecorder && chatRecorder.state !== 'inactive') {
             chatRecorder.stop();
