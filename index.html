@@ -351,7 +351,13 @@
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition;
     
+    // Variables Chat
     let isProcessing = false; 
+    let currentAudio = null; // Pour pouvoir couper le son
+    let silenceTimer = null; // Pour attendre que tu finisses ta phrase
+    let accumulatedText = ""; // Pour stocker la phrase complète
+
+    // Variables Pitch
     let isPitchRecording = false; 
     let mediaRecorder, chunks=[], timerInt, startTime;
 
@@ -360,28 +366,29 @@
     // ==========================================
     function selectChar(n,g,e,el){ selectedChar=n;selectedGender=g;selectedEmoji=e; document.querySelectorAll('.char-opt').forEach(x=>x.classList.remove('selected')); el.classList.add('selected'); }
     
-    // ARRÊT PROPRE (Gestion UI améliorée)
-    function stopPitch(isSubmitting = false) {
-        if(mediaRecorder && mediaRecorder.state !== 'inactive') {
-            mediaRecorder.stop(); // Cela déclenche onstop
-        }
+    // Reset total
+    function resetStates() {
+        // Stop Audio
+        if(currentAudio) { currentAudio.pause(); currentAudio = null; }
+        
+        // Stop Reco Chat
+        if(recognition) recognition.abort();
+        clearTimeout(silenceTimer);
+        isProcessing = false;
+        accumulatedText = "";
 
-        // Si on soumet l'audio, on ne reset pas le bouton tout de suite
-        if (!isSubmitting) {
-            isPitchRecording = false;
-            clearInterval(timerInt);
-            document.getElementById('btnPitchAction').textContent = "🎙️ Enregistrer";
-            document.getElementById('btnPitchAction').className = "btn-action";
-            document.getElementById('timer').textContent = "00:00";
-            chunks = []; // On vide si on annule
-        }
-    }
-
-    function stopChat() {
-        if (recognition) recognition.abort();
+        // Stop Pitch
+        if(mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+        clearInterval(timerInt);
+        isPitchRecording = false;
+        
+        // Reset UI Timer
+        document.getElementById('timer').textContent = "00:00";
     }
 
     function switchTab(tabName) {
+        resetStates(); // On nettoie tout avant de changer
+        
         currentMode = tabName;
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
         const btns = document.querySelectorAll('.nav-btn');
@@ -391,13 +398,11 @@
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
         document.getElementById(`tab-${tabName}`).classList.add('active');
 
-        if (tabName === 'chat') {
-            stopPitch(false); // Annulation propre
-            startChat();
-        } else {
-            stopChat(); 
-            stopPitch(false); // Annulation propre
-        }
+        // Reset UI boutons
+        document.getElementById('btnPitchAction').textContent = "🎙️ Enregistrer";
+        document.getElementById('btnPitchAction').className = "btn-action";
+
+        if (tabName === 'chat') startChat();
     }
 
     async function startSession() {
@@ -416,13 +421,15 @@
     }
 
     // ==========================================
-    // 4. CHAT VOCAL
+    // 4. CHAT VOCAL (CORRIGÉ : Délai + Accumulation)
     // ==========================================
     function startChat() {
         if (!SpeechRecognition) return;
         if (isProcessing) return;
+        if (currentMode !== 'chat') return;
 
-        if (recognition) { try{ recognition.start(); } catch(e){} return; }
+        // On s'assure qu'une ancienne instance ne tourne pas
+        if (recognition) try{ recognition.abort(); } catch(e){}
 
         recognition = new SpeechRecognition();
         recognition.lang = "fr-FR";
@@ -431,22 +438,43 @@
 
         recognition.onresult = (event) => {
             if (isProcessing) return;
+
             let interim = "";
+            let finalChunk = "";
+
             for (let i = event.resultIndex; i < event.results.length; i++) {
                 if (event.results[i].isFinal) {
-                    let text = event.results[i][0].transcript;
-                    document.getElementById('chatFinal').textContent = text;
-                    sendToBrain(text);
+                    finalChunk += event.results[i][0].transcript + " ";
                 } else {
                     interim += event.results[i][0].transcript;
                 }
             }
+
+            // Gestion de l'accumulation
+            if (finalChunk !== "") {
+                accumulatedText += finalChunk;
+                document.getElementById('chatFinal').textContent = accumulatedText;
+                
+                // RESET DU TIMER DE SILENCE
+                clearTimeout(silenceTimer);
+                
+                // On attend 1.5 secondes de silence avant d'envoyer
+                silenceTimer = setTimeout(() => {
+                    sendToBrain(accumulatedText);
+                    accumulatedText = ""; // Reset pour la prochaine phrase
+                }, 1500); 
+            }
+
             document.getElementById('chatInterim').textContent = interim;
         };
         
         recognition.onend = () => {
-            if (!isProcessing && currentMode === 'chat') try { recognition.start(); } catch(e){}
+            // Si on ne traite pas une réponse, on relance le micro pour écouter la suite
+            if (!isProcessing && currentMode === 'chat') {
+                try { recognition.start(); } catch(e){}
+            }
         };
+
         try { recognition.start(); } catch(e){}
         document.getElementById('chatStatus').textContent = "Je vous écoute...";
         document.getElementById('avatarDisplay').className = "avatar listening";
@@ -454,9 +482,13 @@
 
     async function sendToBrain(text) {
         if(!text || text.trim() === "") return;
+        
+        // LOCK
         isProcessing = true;
         if (recognition) recognition.abort(); 
+        clearTimeout(silenceTimer);
 
+        // UI
         const avatar = document.getElementById('avatarDisplay');
         const status = document.getElementById('chatStatus');
         avatar.className = "avatar thinking";
@@ -468,25 +500,30 @@
             if(!res.ok) throw new Error("Erreur serveur");
             const blob = await res.blob();
             const audioUrl = URL.createObjectURL(blob);
-            const audio = new Audio(audioUrl);
+            
+            // On stocke dans la variable globale pour pouvoir stopper
+            currentAudio = new Audio(audioUrl);
 
-            audio.onplay = () => {
-                if (recognition) recognition.abort();
+            currentAudio.onplay = () => {
                 avatar.className = "avatar speaking";
                 status.textContent = "🔊 Flow parle...";
                 status.style.color = "#0ea5e9";
             };
 
-            audio.onended = () => {
+            currentAudio.onended = () => {
+                currentAudio = null; // Nettoyage
                 avatar.className = "avatar listening";
                 status.textContent = "À vous...";
                 status.style.color = "#64748b";
+                
                 setTimeout(() => {
                     isProcessing = false;
                     if (currentMode === 'chat') startChat(); 
                 }, 500); 
             };
-            audio.play();
+            
+            currentAudio.play();
+
         } catch(e) {
             console.error(e);
             avatar.className = "avatar listening";
@@ -497,40 +534,52 @@
     }
 
     async function forceStop() {
-        await apiCall('/stop');
+        // 1. Appel API pour vider l'historique côté serveur si nécessaire
+        apiCall('/stop');
+        
+        // 2. Arrêt immédiat de l'audio en cours
+        if(currentAudio) {
+            currentAudio.pause();
+            currentAudio.currentTime = 0;
+            currentAudio = null;
+        }
+
+        // 3. Reset variables
+        clearTimeout(silenceTimer);
+        accumulatedText = "";
         isProcessing = false;
+        
+        // 4. Relance propre
         stopChat();
         startChat();
     }
 
     // ==========================================
-    // 5. PITCH ANALYZER CORRIGÉ (C'est ici la clé)
+    // 5. PITCH ANALYZER (CORRIGÉ : Timer Stop)
     // ==========================================
     async function getMicrophone() {
         try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch(e) { return null; }
     }
 
     async function togglePitch() {
-        // --- CAS 1 : DÉMARRAGE ---
+        // --- DÉMARRAGE ---
         if (!isPitchRecording) {
-            stopChat(); // Stop chat vocal
+            resetStates(); // Stop chat et audio fantôme
             const stream = await getMicrophone();
-            if (!stream) { alert("Micro inaccessible (Vérifiez permissions ou HTTPS)."); return; }
+            if (!stream) { alert("Micro inaccessible."); return; }
 
             mediaRecorder = new MediaRecorder(stream);
             chunks = [];
             
             mediaRecorder.ondataavailable = event => chunks.push(event.data);
             
-            // LOGIQUE QUAND L'ENREGISTREMENT S'ARRÊTE
             mediaRecorder.onstop = async () => {
-                // Si vide (Annulation), on sort
                 if(chunks.length === 0) return;
 
                 const fd = new FormData(); 
                 fd.append("file", new Blob(chunks, { type: 'audio/webm' }), "pitch.webm");
                 
-                // UI : Chargement
+                // UI : Analyse
                 document.getElementById('btnPitchAction').textContent = "⌛ Analyse en cours...";
                 document.getElementById('btnPitchAction').style.opacity = "0.7";
                 
@@ -540,7 +589,7 @@
                     
                     if (data.status === 'error') { alert("Erreur: " + data.message); return; }
 
-                    // STATS
+                    // AFFICHER RÉSULTATS
                     document.getElementById('statsGrid').style.display = 'grid';
                     document.getElementById('statWPM').textContent = data.metrics.wpm;
                     document.getElementById('statFillers').textContent = data.metrics.fillers;
@@ -548,16 +597,11 @@
                     document.getElementById('pitchTranscript').textContent = data.metrics.transcript;
                     document.getElementById('pitchTranscript').style.display = 'block';
                     
-                    // RAPPORT
                     let rep; 
                     try { 
-                        // Nettoyage JSON agressif pour éviter les bugs
                         let rawJson = data.advice.replace(/```json/g,'').replace(/```/g,'').trim();
                         rep = JSON.parse(rawJson); 
-                    } catch(e) { 
-                        console.error("Erreur JSON", e);
-                        rep = {note:"?", conseil: "Erreur lecture réponse IA"}; 
-                    }
+                    } catch(e) { rep = {note:"?", conseil: "Erreur lecture réponse IA"}; }
 
                     document.getElementById('reportCard').style.display = 'block';
                     document.getElementById('rScore').textContent = rep.note || "N/A";
@@ -567,34 +611,23 @@
                     document.getElementById('rCta').textContent = rep.cta_action || "-";
                     document.getElementById('rTip').textContent = rep.conseil || "-";
 
-                    // GESTION MANQUANTS (LA CORRECTION EST ICI : rep vs report)
                     const missingBox = document.getElementById('missingBox');
-                    if (rep.elements_manquants && 
-                        !rep.elements_manquants.includes("Aucun") && 
-                        rep.elements_manquants.length > 2) {
+                    if (rep.elements_manquants && !rep.elements_manquants.includes("Aucun") && rep.elements_manquants.length > 2) {
                         missingBox.style.display = 'block';
                         document.getElementById('rMissing').textContent = rep.elements_manquants;
-                    } else { 
-                        missingBox.style.display = 'none'; 
-                    }
+                    } else { missingBox.style.display = 'none'; }
 
-                } catch(e) { 
-                    alert("Erreur analyse: " + e); 
-                    console.error(e);
-                }
+                } catch(e) { alert("Erreur analyse: " + e); }
                 
-                // FIN : Reset Bouton
+                // RESET BOUTON FINAL
                 document.getElementById('btnPitchAction').textContent = "🎙️ Recommencer";
                 document.getElementById('btnPitchAction').className = "btn-action";
                 document.getElementById('btnPitchAction').style.opacity = "1";
-                isPitchRecording = false; // Reset état
-                clearInterval(timerInt);
             };
 
             mediaRecorder.start();
             isPitchRecording = true;
             
-            // UI : Mode Enregistrement
             document.getElementById('btnPitchAction').innerHTML = '🛑 Terminer et Analyser';
             document.getElementById('btnPitchAction').className = "btn-action btn-red";
             
@@ -605,12 +638,19 @@
             }, 1000);
 
         } else {
-            // --- CAS 2 : ARRÊT MANUEL (CLICK SUR TERMINER) ---
-            // On change le texte tout de suite pour montrer que ça a marché
+            // --- ARRÊT (Correction critique ici) ---
+            
+            // 1. Arrêter le Timer VISUELLEMENT tout de suite
+            clearInterval(timerInt);
+            
+            // 2. Changer l'état
+            isPitchRecording = false;
+            
+            // 3. Feedback UI immédiat
             document.getElementById('btnPitchAction').textContent = "Envoi...";
             
-            // On déclenche l'arrêt, le paramètre 'true' dit à stopPitch de NE PAS reset l'UI
-            stopPitch(true);
+            // 4. Déclencher l'arrêt du recorder (ce qui lance onstop plus haut)
+            if(mediaRecorder) mediaRecorder.stop();
         }
     }
 </script>
