@@ -270,7 +270,7 @@
     // ============================================
     const isLocal = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
     // --- IMPORTANT : METS TON URL NGROK ICI ---
-    const PROD_API = "https://oscillometric-unexterminated-dionne.ngrok-free.dev"; 
+    const PROD_API = "https://back-flow.onrender.com"; 
     const BASE_URL = isLocal ? "http://127.0.0.1:8001" : PROD_API;
     
     // SENSIBILITÉ MICRO (0 à 100)
@@ -310,15 +310,21 @@
     // ============================================
     // 3. FONCTIONS API GÉNÉRIQUES
     // ============================================
-    async function apiCall(endpoint, body) {
-        return fetch(`${BASE_URL}${endpoint}`, {
-            method: 'POST',
-            body: body instanceof FormData ? body : JSON.stringify(body),
-            headers: body instanceof FormData ? 
-                { 'ngrok-skip-browser-warning': 'true' } : 
-                { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }
-        });
+  async function apiCall(endpoint, body) {
+    // On garde le header ngrok SEULEMENT si on est en local (au cas où tu re-develops plus tard)
+    const headers = {};
+    
+    // Si c'est du JSON standard (pas un fichier audio)
+    if(!(body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
     }
+
+    return fetch(`${BASE_URL}${endpoint}`, {
+        method: 'POST',
+        headers: headers, // Plus besoin de 'ngrok-skip-...' obligatoirement
+        body: body instanceof FormData ? body : JSON.stringify(body)
+    });
+}
 
     function selectChar(n,g,e,el){ 
         selectedChar=n; selectedGender=g; selectedEmoji=e; 
